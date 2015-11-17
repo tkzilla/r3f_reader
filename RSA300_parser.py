@@ -273,8 +273,8 @@ def save_mat_file(IQ, metadata, matfilename):
 		
 def main():
 	"""############################### ENTER PATH FOR DATA FILES HERE ################################"""
-	filename = 'C:\\SignalVu-PC Files\\trigger_footer.r3f'
-	matfilename = 'C:\\SignalVu-PC Files\\trigger_footer.mat'
+	filename = 'C:\\SignalVu-PC Files\\rsa306_test.r3f'
+	matfilename = 'C:\\SignalVu-PC Files\\rsa306_test.mat'
 
 	"""################################## ENTER DISPLAY CHOICE HERE ##################################"""
 	# metadisplay 0 = don't print anything, 1 = print parsed header data, 
