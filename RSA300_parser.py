@@ -9,11 +9,11 @@ a *.mat file that is readable by SignalVu-PC
 
 Directions: 
 1. Save a streamed data file from your RSA300
-2. Put it somewhere on your computer and enter the file path 
-into the 'filename' variable near the bottom of the code
-3. Select your display options. They're explained where the variables are
-
-Look for the ####################################################### near the bottom.
+2. Put it in C:\SignalVu-PC Files\
+3. Run the script, enter the name of your source .r3f file 
+and destination .mat file
+4. Choose display features
+5. Choose to save or discard footer
 
 Features to add: Apply correction to ADC samples
 """
@@ -26,6 +26,37 @@ from scipy import signal
 import scipy.io as sio
 import matplotlib.pyplot as plt
 
+"""##########################Classes##########################"""
+"""
+versioninfo = {'fileid': fileid, 'endian': endian, 'fileformatversion': fileformatversion,
+	'apiversion': apiversion, 'fx3version': fx3version, 'fpgaversion': fpgaversion, 'devicesn': devicesn}
+
+instrumentstate = {'referencelevel': referencelevel, 'centerfrequency': centerfrequency,
+		'temperature': temperature, 'alignment': alignment, 'freqreference': freqreference,
+		'trigmode': trigmode, 'trigsource': trigsource, 'trigtrans': trigtrans,
+		'triglevel': triglevel}
+
+dataformat = {'datatype': datatype, 'frameoffset': frameoffset, 'framesize':framesize,
+		'sampleoffset':sampleoffset, 'samplesize': samplesize, 'nonsampleoffset': nonsampleoffset,
+		'nonsamplesize': nonsamplesize, 'ifcenterfrequency': ifcenterfrequency,
+		'samplerate': samplerate, 'bandwidth': bandwidth, 'corrected': corrected,
+		'timetype': timetype, 'reftime': reftime, 'timesamples': timesamples,
+		'timesamplerate': timesamplerate}
+
+channelcorrection = {'adcscale': adcscale, 'pathdelay': pathdelay, 
+	'correctiontype':correctiontype, 'tableentries': tableentries, 
+	'freqtable': freqtable, 'amptable': amptable, 'phasetable': phasetable}
+
+metadata = {'versioninfo': versioninfo, 'instrumentstate': instrumentstate,
+	'dataformat': dataformat, 'channelcorrection': channelcorrection}
+
+footer = {'frame_descr': frame_descr, 'frame_id': frame_id,
+	'trigger2_idx': trigger2_idx, 'trigger1_idx': trigger1_idx,
+	'time_sync_idx': time_sync_idx, 'frame_status': frame_status,
+	'timestamp': timestamp}
+	infile = 'C:\\SignalVu-PC Files\\trigger_footer.r3f'
+	outfile = 'C:\\SignalVu-PC Files\\trigger_footer.mat'
+"""	
 # This function simply prints out all the metadata contained in the header
 def print_metadata(metadata):
 	print('FILE INFO')
@@ -91,17 +122,17 @@ def plot_graphs(metadata):
 # np.fromstring() allows the user to specify data type
 # unpack() saves data as a tuple, which can be used for printing
 # but not calculations
-def get_header_data(filename, display):
+def get_header_data(infile, display):
 	try:
-		datafile = open(filename, 'rb')
+		datafile = open(infile, 'rb')
 	except IOError:
-		print('\nInvalid input file. Check the \'filename\' variable and try again.')
+		print('\nInvalid input file. Check the \'infile\' variable and try again.')
 		quit()
 	data = datafile.read(16384)
 
 	# Get and print File ID and Version Info sections of the header
 	fileid = data[:27]
-	endian = np.fromstring(data[512:516], dtype = np.uint32)
+	endian = np.fromstring(data[512:516], dtype=np.uint32)
 	fileformatversion = unpack('4B', data[516:520])
 	apiversion = unpack('4B', data[520:524])
 	fx3version = unpack('4B', data[524:528])
@@ -127,20 +158,20 @@ def get_header_data(filename, display):
 
 	# Get and print Data Format section of the header
 	datatype = unpack('1I', data[2048:2052])
-	frameoffset = np.fromstring(data[2052:2056], dtype = np.uint32)
-	framesize = np.fromstring(data[2056:2060], dtype = np.uint32)
+	frameoffset = np.fromstring(data[2052:2056], dtype=np.uint32)
+	framesize = np.fromstring(data[2056:2060], dtype=np.uint32)
 	sampleoffset = unpack('1I', data[2060:2064])
 	samplesize = unpack('1I', data[2064:2068])
-	nonsampleoffset = np.fromstring(data[2068:2072], dtype = np.uint32)
-	nonsamplesize = np.fromstring(data[2072:2076], dtype = np.uint32)
-	ifcenterfrequency = np.fromstring(data[2076:2084], dtype = np.double)
+	nonsampleoffset = np.fromstring(data[2068:2072], dtype=np.uint32)
+	nonsamplesize = np.fromstring(data[2072:2076], dtype=np.uint32)
+	ifcenterfrequency = np.fromstring(data[2076:2084], dtype=np.double)
 	samplerate = unpack('1d', data[2084:2092])
 	bandwidth = unpack('1d', data[2092:2100])
 	corrected = unpack('1I', data[2100:2104])
 	timetype = unpack('1I', data[2104:2108])
 	reftime = unpack('7i', data[2108:2136])
 	timesamples = unpack('1Q', data[2136:2144])
-	timesamplerate = np.fromstring(data[2144:2152], dtype = np.uint64)
+	timesamplerate = np.fromstring(data[2144:2152], dtype=np.uint64)
 	dataformat = {'datatype': datatype, 'frameoffset': frameoffset, 'framesize':framesize,
 		'sampleoffset':sampleoffset, 'samplesize': samplesize, 'nonsampleoffset': nonsampleoffset,
 		'nonsamplesize': nonsamplesize, 'ifcenterfrequency': ifcenterfrequency,
@@ -149,16 +180,16 @@ def get_header_data(filename, display):
 		'timesamplerate': timesamplerate}
 
 	# Get Signal Path and Channel Correction data
-	adcscale = np.fromstring(data[3072:3080], dtype = np.double)
-	pathdelay = np.fromstring(data[3080:3088], dtype = np.double)
-	correctiontype = np.fromstring(data[4096:4100], dtype = np.uint32)
-	tableentries = np.fromstring(data[4352:4356], dtype = np.uint32)
+	adcscale = np.fromstring(data[3072:3080], dtype=np.double)
+	pathdelay = np.fromstring(data[3080:3088], dtype=np.double)
+	correctiontype = np.fromstring(data[4096:4100], dtype=np.uint32)
+	tableentries = np.fromstring(data[4352:4356], dtype=np.uint32)
 	freqindex = 4356
 	phaseindex = freqindex + 501*4
 	ampindex = phaseindex + 501*4
-	freqtable = np.fromstring(data[freqindex:(freqindex+tableentries*4)], dtype = np.float32)
-	amptable = np.fromstring(data[phaseindex:(phaseindex+tableentries*4)], dtype = np.float32)
-	phasetable = np.fromstring(data[ampindex:(ampindex+tableentries*4)], dtype = np.float32)
+	freqtable = np.fromstring(data[freqindex:(freqindex+tableentries*4)], dtype=np.float32)
+	amptable = np.fromstring(data[phaseindex:(phaseindex+tableentries*4)], dtype=np.float32)
+	phasetable = np.fromstring(data[ampindex:(ampindex+tableentries*4)], dtype=np.float32)
 	channelcorrection = {'adcscale': adcscale, 'pathdelay': pathdelay, 
 		'correctiontype':correctiontype, 'tableentries': tableentries, 
 		'freqtable': freqtable, 'amptable': amptable, 'phasetable': phasetable}
@@ -168,50 +199,72 @@ def get_header_data(filename, display):
 
 	# Depending on the status of 'display,' display metadata, 
 	# correction plots, both, or neither
-	if display == 3:
+	if display == '3':
 		print_metadata(metadata)
 		plot_graphs(metadata)
-	elif display == 2:
+	elif display == '2':
 		print('\nChannel correction graphs plotted.')
 		plot_graphs(metadata)
-	elif display == 1:
+	elif display == '1':
 		print_metadata(metadata)
 		print('\nMetadata parsed and printed.')
-	elif display == 0:
+	elif display == '0':
 		print('\nData parsed.')
 	else: 
 		print('Invalid choice for \'metadisplay\' variable. Select 0, 1, 2, or 3.')
 
 	return metadata
 
-def get_adc_samples(filename, metadata):
+def get_adc_samples(infile, metadata, footerflag):
 	try:
-		data = open(filename, 'rb')
+		data = open(infile, 'rb')
 	except IOError:
-		print('Invalid input file. Check the \'filename\' and try again.')
+		print('Invalid input file. Check the \'infile\' and try again.')
 		quit()
-	filesize = os.path.getsize(filename)
+	filesize = os.path.getsize(infile)
 
 	#Filter file type and read the file appropriately
-	if '.r3f' in filename:
+	if '.r3f' in infile:
 		numframes = (filesize/metadata['dataformat']['framesize']) - 1
 		print('Number of Frames: %d' % numframes)
 		data.seek(metadata['dataformat']['frameoffset'])
 		adcdata = np.empty(0)
 		rawdata = metadata['dataformat']['nonsampleoffset']
 		footerdata = metadata['dataformat']['nonsamplesize']
+		footer = np.zeros((numframes, footerdata))
 		for i in range(0,numframes):
 			frame = data.read(rawdata)
-			data.seek(footerdata,1)
-			adcdata = np.append(adcdata,np.fromstring(frame, dtype = np.int16))
-			print('Current Frame: %d' % i)
-	elif '.r3a' in filename:
-		adcdata = np.fromfile(filename, dtype = np.int16)
+			if footerflag == '0':
+				data.seek(footerdata)
+			else:
+				temp_ftr = data.read(footerdata)
+				footer[i] = np.fromstring(temp_ftr, dtype=np.uint8, count=footerdata)
+				#footer = parse_footer(temp_ftr)
+				print(footer[i])
+			adcdata = np.append(adcdata,np.fromstring(frame, dtype=np.int16))
+			#print('Current Frame: %d' % i)
+	elif '.r3a' in infile:
+		adcdata = np.fromfile(infile, dtype=np.int16)
 
 	#Scale ADC data
 	adcdata = adcdata*metadata['channelcorrection']['adcscale']
-	print(len(adcdata))
+	#print(len(adcdata))
 	return adcdata
+
+def parse_footer(footer):
+	reserved = np.fromstring(footer, dtype=np.uint16, count=3)
+	frame_descr = np.fromstring(footer, dtype=np.uint16, count=1)
+	frame_id = np.fromstring(footer, dtype=np.uint32, count=1)
+	trigger2_idx = np.fromstring(footer, dtype=np.uint16, count=1)
+	trigger1_idx = np.fromstring(footer, dtype=np.uint16, count=1)
+	time_sync_idx = np.fromstring(footer, dtype=np.uint16, count=1)
+	frame_status = np.fromstring(footer, dtype=np.uint16, count=1)
+	timestamp = np.fromstring(footer, dtype=np.uint64, count=1)
+	footer = {'frame_descr': frame_descr, 'frame_id': frame_id,
+	'trigger2_idx': trigger2_idx, 'trigger1_idx': trigger1_idx,
+	'time_sync_idx': time_sync_idx, 'frame_status': frame_status,
+	'timestamp': timestamp}
+	return footer
 
 def ddc(adcdata,metadata):
 	#Generate quadrature signals
@@ -232,8 +285,8 @@ def ddc(adcdata,metadata):
 	Q = signal.lfilter(IQfilter, 1.0, Q)
 	IQ = I + 1j*Q
 	IQ = 2*IQ
-	return IQ
 	print('Digital Down Conversion Complete.')
+	return IQ
 
 def IQ_correction(IQ, metadata):
 	#amp and phase correction filter NOT FINISHED
@@ -261,53 +314,56 @@ def IQ_correction(IQ, metadata):
 	print('IQ Correction Applied.')
 	return IQ
 
-def save_mat_file(IQ, metadata, matfilename):
+def save_mat_file(IQ, metadata, outfile):
 	InputCenter = metadata['instrumentstate']['centerfrequency']
 	XDelta = 1.0/metadata['dataformat']['timesamplerate']
 	Y = IQ
 	InputZoom = np.uint8(1)
 	Span = metadata['dataformat']['bandwidth']
-	sio.savemat(matfilename, {'InputCenter':InputCenter,'Span':Span,'XDelta':XDelta,
+	sio.savemat(outfile, {'InputCenter':InputCenter,'Span':Span,'XDelta':XDelta,
 		'Y':Y,'InputZoom':InputZoom}, format='5')
-	print('File saved at %s.' % matfilename)
+	print('File saved at %s.' % outfile)
 		
 def main():
-	"""############################### ENTER PATH FOR DATA FILES HERE ################################"""
-	filename = 'C:\\SignalVu-PC Files\\rsa306_test.r3f'
-	matfilename = 'C:\\SignalVu-PC Files\\rsa306_test.mat'
+	base_directory = 'C:\\SignalVu-PC Files\\'
+	infile = raw_input('Enter input file name including extension (.r3f).\n> ')
+	outfile = raw_input('Enter output file name including extension(.mat).\n> ')
+	infile = base_directory + infile
+	outfile = base_directory + outfile
+	
+	md_instructions = "0=display nothing\n1=display header data\n2=plot correction tables\n3=display 1 and 2\n> "
+	metadisplay = raw_input(md_instructions)
 
-	"""################################## ENTER DISPLAY CHOICE HERE ##################################"""
-	# metadisplay 0 = don't print anything, 1 = print parsed header data, 
-	# 2 = plot correction tables, 3 = print parsed header data and plot correction tables
-	metadisplay = 1
-
-	if '.r3f' in filename:
-		metadata = get_header_data(filename, metadisplay)
-		adcdata = get_adc_samples(filename, metadata)
-	elif '.r3h' in filename:
-		headerfilename = filename
-		datafilename = filename[:-1] + 'a'
-		metadata = get_header_data(headerfilename, metadisplay)
-		adcdata = get_adc_samples(datafilename, metadata)
+	footerflag = raw_input('0=discard footer\n1=save footer\n> ')
+	
+	if '.r3f' in infile:
+		metadata = get_header_data(infile, metadisplay)
+		adcdata = get_adc_samples(infile, metadata, footerflag)
+	elif '.r3h' in infile:
+		headerinfile = infile
+		datainfile = infile[:-1] + 'a'
+		metadata = get_header_data(headerinfile, metadisplay)
+		adcdata = get_adc_samples(datainfile, metadata, footerflag)
 		print('\nYou specified a *.r3h file extension.')
 		print('I used the file you specified to get the header data.')
 		print('I found the associated *.r3a file and read ADC data from it.')
-		print('The file I used is located at{0}'.format(datafilename))
-	elif '.r3a' in filename:
-		datafilename = filename
-		headerfilename = filename[:-1] + 'h'
-		metadata = get_header_data(headerfilename, metadisplay)
-		adcdata = get_adc_samples(datafilename, metadata)
+		print('The file I used is located at{0}'.format(datainfile))
+	elif '.r3a' in infile:
+		datainfile = infile
+		headerinfile = infile[:-1] + 'h'
+		metadata = get_header_data(headerinfile, metadisplay)
+		adcdata = get_adc_samples(datainfile, metadata, footerflag)
 		print('\nYou specified a *.r3a file extension.')
 		print('I used the file you specified to get the ADC data.')
 		print('I found the associated *.r3h file and read header data from it.')
-		print('The file I used is located at {0}'.format(headerfilename))
+		print('The file I used is located at {0}'.format(headerinfile))
 	else:
-		print('\nInvalid input file. Check the \'filename\' variable and try again.')
+		print('\nInvalid input file. Check the \'infile\' variable and try again.')
 		quit()
 
 	IQ = ddc(adcdata,metadata)
 	#IQ = IQ_correction(IQ,metadata)
-	save_mat_file(IQ,metadata,matfilename)
+	save_mat_file(IQ,metadata,outfile)
 
-main()
+if __name__ == '__main__':
+	main()
