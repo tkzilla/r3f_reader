@@ -54,6 +54,8 @@ footer = {'frame_descr': frame_descr, 'frame_id': frame_id,
 	'trigger2_idx': trigger2_idx, 'trigger1_idx': trigger1_idx,
 	'time_sync_idx': time_sync_idx, 'frame_status': frame_status,
 	'timestamp': timestamp}
+	infile = 'C:\\SignalVu-PC Files\\trigger_footer.r3f'
+	outfile = 'C:\\SignalVu-PC Files\\trigger_footer.mat'
 """	
 # This function simply prints out all the metadata contained in the header
 def print_metadata(metadata):
