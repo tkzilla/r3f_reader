@@ -107,7 +107,6 @@ class R3F:
 
 		self.adcsamples = []
 		self.IQ = []
-		self.footer = FooterData()
 		self.vinfo = VersionInfo()
 		self.inststate = InstrumentState()
 		self.dformat = DataFormat()
@@ -177,7 +176,8 @@ class R3F:
 		self.dformat.framesize = np.fromstring(
 			data[2056:2060], dtype=np.uint32)
 		self.dformat.sampleoffset = unpack('1I', data[2060:2064])
-		self.dformat.samplesize = unpack('1I', data[2064:2068])
+		self.dformat.samplesize = np.fromstring(
+			data[2064:2068], dtype=np.int32)
 		self.dformat.nonsampleoffset = np.fromstring(
 			data[2068:2072], dtype=np.uint32)
 		self.dformat.nonsamplesize = np.fromstring(
@@ -294,13 +294,18 @@ class R3F:
 			numframes = (filesize/self.dformat.framesize) - 1
 			print('Number of Frames: %d' % numframes)
 			data.seek(self.dformat.frameoffset)
-			adcdata = np.empty(0)
-			#adcdata = np.empty(numframes*self.dformat.samplesize)
+			#adcdata = np.empty(0)
+			adcdata = np.empty(numframes*self.dformat.samplesize)
+			fstart = 0
+			fstop = self.dformat.samplesize
 			rawdata = self.dformat.nonsampleoffset
 			footerdata = self.dformat.nonsamplesize
 			footer = np.zeros((numframes, footerdata))
 			for i in range(0,numframes):
 				frame = data.read(rawdata)
+				adcdata[fstart:fstop] = np.fromstring(frame, dtype=np.int16)
+				fstart = fstop
+				fstop = fstop + self.dformat.samplesize
 				if self.footerflag == '0':
 					data.seek(footerdata,1)
 				else:
@@ -308,8 +313,6 @@ class R3F:
 					footer[i] = np.fromstring(temp_ftr, dtype=np.uint8, count=footerdata)
 					#footer = parse_footer(temp_ftr)
 					print(footer[i])
-				adcdata = np.append(adcdata,np.fromstring(frame, dtype=np.int16))
-				#print('Current Frame: %d' % i)
 		elif '.r3a' in self.infile:
 			adcdata = np.fromfile(self.infile, dtype=np.int16)
 
@@ -317,18 +320,16 @@ class R3F:
 		self.adcsamples = adcdata*self.chcorr.adcscale
 
 	def parse_footer(self):
-		reserved = np.fromstring(footer, dtype=np.uint16, count=3)
-		frame_descr = np.fromstring(footer, dtype=np.uint16, count=1)
-		frame_id = np.fromstring(footer, dtype=np.uint32, count=1)
-		trigger2_idx = np.fromstring(footer, dtype=np.uint16, count=1)
-		trigger1_idx = np.fromstring(footer, dtype=np.uint16, count=1)
-		time_sync_idx = np.fromstring(footer, dtype=np.uint16, count=1)
-		frame_status = np.fromstring(footer, dtype=np.uint16, count=1)
-		timestamp = np.fromstring(footer, dtype=np.uint64, count=1)
-		footer = {'frame_descr': frame_descr, 'frame_id': frame_id,
-		'trigger2_idx': trigger2_idx, 'trigger1_idx': trigger1_idx,
-		'time_sync_idx': time_sync_idx, 'frame_status': frame_status,
-		'timestamp': timestamp}
+		footer = FooterData()
+		footer.reserved = np.fromstring(footer, dtype=np.uint16, count=3)
+		footer.frame_descr = np.fromstring(footer, dtype=np.uint16, count=1)
+		footer.frame_id = np.fromstring(footer, dtype=np.uint32, count=1)
+		footer.trigger2_idx = np.fromstring(footer, dtype=np.uint16, count=1)
+		footer.trigger1_idx = np.fromstring(footer, dtype=np.uint16, count=1)
+		footer.time_sync_idx = np.fromstring(footer, dtype=np.uint16, count=1)
+		footer.frame_status = np.fromstring(footer, dtype=np.uint16, count=1)
+		footer.timestamp = np.fromstring(footer, dtype=np.uint64, count=1)
+		
 		return footer
 
 	def ddc(self):
