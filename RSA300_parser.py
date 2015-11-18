@@ -293,13 +293,13 @@ class R3F:
 		if '.r3f' in self.infile:
 			numframes = (filesize/self.dformat.framesize) - 1
 			print('Number of Frames: %d' % numframes)
-			data.seek(self.dformat.nonsampleoffset)
+			data.seek(self.dformat.frameoffset)
 			adcdata = np.empty(0)
-			framesize = self.dformat.nonsampleoffset
+			rawdata = self.dformat.nonsampleoffset
 			footerdata = self.dformat.nonsamplesize
 			footer = np.zeros((numframes, footerdata))
 			for i in range(0,numframes):
-				frame = data.read(framesize)
+				frame = data.read(rawdata)
 				if self.footerflag == '0':
 					data.seek(footerdata)
 				else:
@@ -310,7 +310,7 @@ class R3F:
 				adcdata = np.append(adcdata,np.fromstring(frame, dtype=np.int16))
 				#print('Current Frame: %d' % i)
 		elif '.r3a' in self.infile:
-			adcdata = np.fromfile(infile, dtype=np.int16)
+			adcdata = np.fromfile(self.infile, dtype=np.int16)
 
 		#Scale ADC data
 		self.adcsamples = adcdata*self.chcorr.adcscale
@@ -348,8 +348,9 @@ class R3F:
 		I = signal.lfilter(IQfilter, 1.0, I)
 		Q = signal.lfilter(IQfilter, 1.0, Q)
 		IQ = I + 1j*Q
-		self.IQ = 2*IQ
+		IQ = 2*IQ
 		print('Digital Down Conversion Complete.')
+		self.IQ = IQ
 
 	def save_mat_file(self):
 		InputCenter = self.inststate.centerfrequency
