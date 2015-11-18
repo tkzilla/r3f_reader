@@ -304,7 +304,7 @@ class R3F:
 				if self.footerflag == '0':
 					data.seek(footerdata,1)
 				else:
-					temp_ftr = data.read(footerdata,1)
+					temp_ftr = data.read(footerdata)
 					footer[i] = np.fromstring(temp_ftr, dtype=np.uint8, count=footerdata)
 					#footer = parse_footer(temp_ftr)
 					print(footer[i])
