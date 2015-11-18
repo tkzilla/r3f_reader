@@ -295,15 +295,16 @@ class R3F:
 			print('Number of Frames: %d' % numframes)
 			data.seek(self.dformat.frameoffset)
 			adcdata = np.empty(0)
+			#adcdata = np.empty(numframes*self.dformat.samplesize)
 			rawdata = self.dformat.nonsampleoffset
 			footerdata = self.dformat.nonsamplesize
 			footer = np.zeros((numframes, footerdata))
 			for i in range(0,numframes):
 				frame = data.read(rawdata)
 				if self.footerflag == '0':
-					data.seek(footerdata)
+					data.seek(footerdata,1)
 				else:
-					temp_ftr = data.read(footerdata)
+					temp_ftr = data.read(footerdata,1)
 					footer[i] = np.fromstring(temp_ftr, dtype=np.uint8, count=footerdata)
 					#footer = parse_footer(temp_ftr)
 					print(footer[i])
