@@ -28,6 +28,75 @@ import matplotlib.pyplot as plt
 
 """##########################Classes##########################"""
 """
+class VersionInfo:
+	def __init__(self):
+		self.fileid = []
+		self.endian = []
+		self.fileformatversion = []
+		self.apiversion = []
+		self.fx3version = []
+		self.fpgaversion = []
+		self.devicesn = []
+
+class InstrumentState:
+	def __init__(self):
+		self.referencelevel = []
+		self.centerfrequency = []
+		self.temperature = []
+		self.alignment = []
+		self.freqreference = []
+		self.trigmode = []
+		self.trigsource = []
+		self.trigtrans = []
+		self.triglevel = []
+
+class DataFormat:
+	def __init__(self):
+		self.datatype = []
+		self.frameoffset = []
+		self.framesize = []
+		self.sampleoffset = []
+		self.samplesize = []
+		self.nonsampleoffset = []
+		self.nonsamplesize = []
+		self.ifcenterfrequency = []
+		self.samplerate = []
+		self.bandwidth = []
+		self.corrected = []
+		self.timetype = []
+		self.reftime = []
+		self.timesamples = []
+		self.timesamplerate = []
+
+class ChannelCorrection:
+	def __init__(self):
+		self.adcscale = []
+		self.pathdelay = []
+		self.correctiontype = []
+		self.tableentries = []
+		self.freqtable = []
+		self.amptable = []
+		self.phasetable = []
+
+class MetaData:
+	def __init__(self):
+		self.versioninfo = VersionInfo()
+		self.instrumentstate = InstrumentState()
+		self.dataformat = DataFormat()
+		self.channelcorrection = ChannelCorrection()
+
+class FooterData:
+	def __init__(self):
+		self.frame_descr = []
+		self.frame_id = []
+		self.trigger2_idx = []
+		self.trigger1_idx = []
+		self.time_sync_idx = []
+		self.frame_status = []
+		self.timestamp = []
+"""
+
+"""
 versioninfo = {'fileid': fileid, 'endian': endian, 'fileformatversion': fileformatversion,
 	'apiversion': apiversion, 'fx3version': fx3version, 'fpgaversion': fpgaversion, 'devicesn': devicesn}
 
