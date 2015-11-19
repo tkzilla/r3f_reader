@@ -91,11 +91,8 @@ class FooterClass:
 class R3F:
 	def __init__(self):
 		base_directory = 'C:\\SignalVu-PC Files\\'
-		#ifilename = raw_input(
-		#	'Enter input file name including extension (.r3f).\n> ')
-		#ofilename = raw_input(
-		#	'Enter output file name including extension(.mat).\n> ')
-		ifilename = 'yar.r3f'
+		ifilename = raw_input(
+			'Enter input file name including extension (.r3f/.r3a/.r3h).\n> ')
 		self.infile = base_directory + ifilename
 		self.outfile = base_directory + ifilename[:-4]
 
@@ -376,7 +373,6 @@ class R3F:
 				ffile.write('\n')
 			ffile.close()
 			print('Footer file saved at {}.\n'.format(fname))
-
 
 	"""
 	def IQ_correction(IQ, metadata):
