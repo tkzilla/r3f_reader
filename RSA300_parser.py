@@ -78,7 +78,7 @@ class ChannelCorrection:
 		self.amptable = []
 		self.phasetable = []
 
-class FooterData:
+class FooterClass:
 	def __init__(self):
 		self.frame_descr = []
 		self.frame_id = []
@@ -95,18 +95,18 @@ class R3F:
 		#	'Enter input file name including extension (.r3f).\n> ')
 		#ofilename = raw_input(
 		#	'Enter output file name including extension(.mat).\n> ')
-		ifilename = 'trigger_footer.r3f'
-		ofilename = 'trigger_footer.mat'
+		ifilename = 'yar.r3f'
+		ofilename = 'yar.mat'
 		self.infile = base_directory + ifilename
 		self.outfile = base_directory + ofilename
 
-		md_instructions = "0=display nothing\n1=display header data\n2=plot correction tables\n3=display 1 and 2\n> "
+		md_instructions = ("0=display nothing\n1=display header data" +
+		"\n2=plot correction tables\n3=display 1 and 2\n> ")
 		self.disp_flag = raw_input(md_instructions)
-
-		self.footerflag = raw_input('0=discard footer\n1=save footer\n> ')
-
-		self.adcsamples = []
+		self.footer_flag = raw_input('0=discard footer\n1=save footer\n> ')
+		self.ADC = []
 		self.IQ = []
+		self.footer = []
 		self.vinfo = VersionInfo()
 		self.inststate = InstrumentState()
 		self.dformat = DataFormat()
@@ -151,9 +151,7 @@ class R3F:
 		self.vinfo.fx3version = unpack('4B', data[524:528])
 		self.vinfo.fpgaversion = unpack('4B', data[528:532])
 		self.vinfo.devicesn = data[532:596]
-		#versioninfo = {'fileid': fileid, 'endian': endian, 'fileformatversion': fileformatversion,
-		#	'apiversion': apiversion, 'fx3version': fx3version, 'fpgaversion': fpgaversion, 'devicesn': devicesn}
-
+		
 		# Get and print the Instrument State section of the header
 		self.inststate.referencelevel = unpack('1d', data[1024:1032])
 		self.inststate.centerfrequency = unpack('1d', data[1032:1040])
@@ -164,10 +162,6 @@ class R3F:
 		self.inststate.trigsource = unpack('1I', data[1060:1064])
 		self.inststate.trigtrans = unpack('1I', data[1064:1068])
 		self.inststate.triglevel = unpack('1d', data[1068:1076])
-		#instrumentstate = {'referencelevel': referencelevel, 'centerfrequency': centerfrequency,
-		#	'temperature': temperature, 'alignment': alignment, 'freqreference': freqreference,
-		#	'trigmode': trigmode, 'trigsource': trigsource, 'trigtrans': trigtrans,
-		#	'triglevel': triglevel}
 
 		# Get and print Data Format section of the header
 		self.dformat.datatype = unpack('1I', data[2048:2052])
@@ -192,12 +186,6 @@ class R3F:
 		self.dformat.timesamples = unpack('1Q', data[2136:2144])
 		self.dformat.timesamplerate = np.fromstring(
 			data[2144:2152], dtype=np.uint64)
-		#dataformat = {'datatype': datatype, 'frameoffset': frameoffset, 'framesize':framesize,
-		#	'sampleoffset':sampleoffset, 'samplesize': samplesize, 'nonsampleoffset': nonsampleoffset,
-		#	'nonsamplesize': nonsamplesize, 'ifcenterfrequency': ifcenterfrequency,
-		#	'samplerate': samplerate, 'bandwidth': bandwidth, 'corrected': corrected,
-		#	'timetype': timetype, 'reftime': reftime, 'timesamples': timesamples,
-		#	'timesamplerate': timesamplerate}
 
 		# Get Signal Path and Channel Correction data
 		self.chcorr.adcscale = np.fromstring(
@@ -207,6 +195,7 @@ class R3F:
 		self.chcorr.correctiontype = np.fromstring(
 			data[4096:4100], dtype=np.uint32)
 		tableentries = np.fromstring(data[4352:4356], dtype=np.uint32)
+		self.chcorr.tableentries = tableentries	#purely for use in IQ_correction()
 		freqindex = 4356
 		phaseindex = freqindex + 501*4
 		ampindex = phaseindex + 501*4
@@ -216,13 +205,7 @@ class R3F:
 			data[phaseindex:(phaseindex+tableentries*4)], dtype=np.float32)
 		self.chcorr.amptable = np.fromstring(
 			data[ampindex:(ampindex+tableentries*4)], dtype=np.float32)
-		#channelcorrection = {'adcscale': adcscale, 'pathdelay': pathdelay, 
-		#	'correctiontype':correctiontype, 'tableentries': tableentries, 
-		#	'freqtable': freqtable, 'amptable': amptable, 'phasetable': phasetable}
 		
-		#metadata = {'versioninfo': versioninfo, 'instrumentstate': instrumentstate,
-		#	'dataformat': dataformat, 'channelcorrection': channelcorrection}
-
 	def print_metadata(self):
 		# This function simply prints out all the metadata contained in the header
 		print('FILE INFO')
@@ -267,9 +250,9 @@ class R3F:
 		print('Signal Path Delay: %f nsec' % (self.chcorr.pathdelay*1e9))
 		print('Correction Type (0=LF, 1=IF): %i' % self.chcorr.correctiontype)
 
-	# This function plots the amplitude and phase correction 
-	# tables as a function of IF frequency
 	def plot_graphs(self):
+		# This function plots the amplitude and phase correction 
+		# tables as a function of IF frequency
 		plt.subplot(2,1,1)
 		plt.plot(self.chcorr.freqtable/1e6,self.chcorr.amptable)
 		plt.title('Amplitude and Phase Correction')
@@ -294,56 +277,52 @@ class R3F:
 			numframes = (filesize/self.dformat.framesize) - 1
 			print('Number of Frames: %d' % numframes)
 			data.seek(self.dformat.frameoffset)
-			#adcdata = np.empty(0)
 			adcdata = np.empty(numframes*self.dformat.samplesize)
 			fstart = 0
 			fstop = self.dformat.samplesize
-			rawdata = self.dformat.nonsampleoffset
-			footerdata = self.dformat.nonsamplesize
-			footer = np.zeros((numframes, footerdata))
-			for i in range(0,numframes):
-				frame = data.read(rawdata)
+			self.footer = range(0,numframes)
+			for i in range(numframes):
+				frame = data.read(self.dformat.nonsampleoffset)
 				adcdata[fstart:fstop] = np.fromstring(frame, dtype=np.int16)
 				fstart = fstop
 				fstop = fstop + self.dformat.samplesize
-				if self.footerflag == '0':
-					data.seek(footerdata,1)
+				if self.footer_flag == '0':
+					data.seek(self.dformat.nonsamplesize,1)
 				else:
-					temp_ftr = data.read(footerdata)
-					footer[i] = np.fromstring(temp_ftr, dtype=np.uint8, count=footerdata)
-					#footer = parse_footer(temp_ftr)
-					print(footer[i])
+					temp_ftr = data.read(self.dformat.nonsamplesize)
+					self.footer[i] = FooterClass()
+					self.footer[i] = self.parse_footer(temp_ftr)
 		elif '.r3a' in self.infile:
 			adcdata = np.fromfile(self.infile, dtype=np.int16)
 
 		#Scale ADC data
-		self.adcsamples = adcdata*self.chcorr.adcscale
+		self.ADC = adcdata*self.chcorr.adcscale
 
-	def parse_footer(self):
-		footer = FooterData()
-		footer.reserved = np.fromstring(footer, dtype=np.uint16, count=3)
-		footer.frame_descr = np.fromstring(footer, dtype=np.uint16, count=1)
-		footer.frame_id = np.fromstring(footer, dtype=np.uint32, count=1)
-		footer.trigger2_idx = np.fromstring(footer, dtype=np.uint16, count=1)
-		footer.trigger1_idx = np.fromstring(footer, dtype=np.uint16, count=1)
-		footer.time_sync_idx = np.fromstring(footer, dtype=np.uint16, count=1)
-		footer.frame_status = np.fromstring(footer, dtype=np.uint16, count=1)
-		footer.timestamp = np.fromstring(footer, dtype=np.uint64, count=1)
+	def parse_footer(self, raw_footer):
+		footer = FooterClass()
+		footer.reserved = np.fromstring(raw_footer[0:6], dtype=np.uint16, count=3)
+		footer.frame_descr = np.fromstring(raw_footer[6:8], dtype=np.uint16, count=1)
+		footer.frame_id = np.fromstring(raw_footer[8:12], dtype=np.uint32, count=1)
+		footer.trigger2_idx = np.fromstring(raw_footer[12:14], dtype=np.uint16, count=1)
+		footer.trigger1_idx = np.fromstring(raw_footer[14:16], dtype=np.uint16, count=1)
+		footer.time_sync_idx = np.fromstring(raw_footer[16:18], dtype=np.uint16, count=1)
+		footer.frame_status = np.fromstring(raw_footer[18:20], dtype=np.uint16, count=1)
+		footer.timestamp = np.fromstring(raw_footer[20:28], dtype=np.uint64, count=1)
 		
 		return footer
 
 	def ddc(self):
 		#Generate quadrature signals
 		IFfreq = self.dformat.ifcenterfrequency
-		size = len(self.adcsamples)
+		size = len(self.ADC)
 		sampleperiod = 1.0/self.dformat.timesamplerate
 		xaxis = np.linspace(0,size*sampleperiod,size)
 		LO_I = np.sin(IFfreq*(2*np.pi)*xaxis)
 		LO_Q = np.cos(IFfreq*(2*np.pi)*xaxis)
 
 		#Run ADC data through digital down converter
-		I = self.adcsamples*LO_I
-		Q = self.adcsamples*LO_Q
+		I = self.ADC*LO_I
+		Q = self.ADC*LO_Q
 		nyquist = self.dformat.timesamplerate/2
 		cutoff = 40e6/nyquist
 		IQfilter = signal.firwin(300, cutoff, window=('kaiser', 10))
@@ -364,31 +343,32 @@ class R3F:
 			'Y':Y,'InputZoom':InputZoom}, format='5')
 		print('File saved at %s.' % self.outfile)
 
-def IQ_correction(IQ, metadata):
-	#amp and phase correction filter NOT FINISHED
-	#CorrectionFrameSize
-	framesize = metadata['channelcorrection']['tableentries']
-	amptable = metadata['channelcorrection']['amptable']
-	phasetable = metadata['channelcorrection']['phasetable']
-	#Convert magnitude from dB to V and phase from degrees to rad
-	amptable = 1/np.sqrt(10**(amptable/(2**15*10)))
-	phasetable = phasetable*np.pi/180
-	correct_real = amptable*np.cos(np.radians(phasetable))
-	correct_imag = amptable*np.sin(np.radians(phasetable))
-	correctFD = correct_real + 1j*correct_imag
-	corr_frames = len(IQ)/framesize
-	IQi = 0
-	
-	#Apply correction factors to IQ data frame by frame
-	for frame in range(0,corr_frames):
-		cframe = IQ[IQi:IQi+framesize]
-		cframe = fft(cframe)
-		cframe = cframe*correctFD
-		cframe = ifft(cframe)
-		IQ[IQi:IQi+framesize] = cframe
-		IQi = IQi+framesize
-	print('IQ Correction Applied.')
-	return IQ	
+	"""
+	def IQ_correction(IQ, metadata):
+		#amp and phase correction filter NOT FINISHED
+		#CorrectionFrameSize
+		framesize = self.chcorr.tableentries
+		amptable = self.chcorr.amptable
+		phasetable = self.chcorr.phasetable
+		#Convert magnitude from dB to V and phase from degrees to rad
+		amptable = 1/np.sqrt(10**(amptable/(2**15*10)))
+		phasetable = phasetable*np.pi/180
+		correct_real = amptable*np.cos(np.radians(phasetable))
+		correct_imag = amptable*np.sin(np.radians(phasetable))
+		correctFD = correct_real + 1j*correct_imag
+		corr_frames = len(self.IQ)/framesize
+		IQi = 0
+		
+		#Apply correction factors to IQ data frame by frame
+		for frame in range(0,corr_frames):
+			cframe = self.IQ[IQi:IQi+framesize]
+			cframe = fft(cframe)
+			cframe = cframe*correctFD
+			cframe = ifft(cframe)
+			self.IQ[IQi:IQi+framesize] = cframe
+			IQi = IQi+framesize
+		print('IQ Correction Applied.')
+	"""	
 
 def main():
 	r3f = R3F()
@@ -397,16 +377,15 @@ def main():
 	r3f.get_adc_samples()
 	r3f.ddc()
 	r3f.save_mat_file()
-	#r3f.print_metadata()
 	"""
 	if '.r3f' in infile:
 		metadata = get_header_data(infile, metadisplay)
-		adcdata = get_adc_samples(infile, metadata, footerflag)
+		adcdata = get_adc_samples(infile, metadata, footer_flag)
 	elif '.r3h' in infile:
 		headerinfile = infile
 		datainfile = infile[:-1] + 'a'
 		metadata = get_header_data(headerinfile, metadisplay)
-		adcdata = get_adc_samples(datainfile, metadata, footerflag)
+		adcdata = get_adc_samples(datainfile, metadata, footer_flag)
 		print('\nYou specified a *.r3h file extension.')
 		print('I used the file you specified to get the header data.')
 		print('I found the associated *.r3a file and read ADC data from it.')
@@ -415,7 +394,7 @@ def main():
 		datainfile = infile
 		headerinfile = infile[:-1] + 'h'
 		metadata = get_header_data(headerinfile, metadisplay)
-		adcdata = get_adc_samples(datainfile, metadata, footerflag)
+		adcdata = get_adc_samples(datainfile, metadata, footer_flag)
 		print('\nYou specified a *.r3a file extension.')
 		print('I used the file you specified to get the ADC data.')
 		print('I found the associated *.r3h file and read header data from it.')
@@ -423,10 +402,6 @@ def main():
 	else:
 		print('\nInvalid input file. Check the \'infile\' variable and try again.')
 		quit()
-
-	IQ = ddc(adcdata,metadata)
-	#IQ = IQ_correction(IQ,metadata)
-	save_mat_file(IQ,metadata,outfile)
 	"""
 if __name__ == '__main__':
 	main()
