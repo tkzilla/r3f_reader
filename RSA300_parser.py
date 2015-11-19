@@ -3,7 +3,7 @@ Script: RSA300 Streamed Data File Parser
 Date: 11/2014
 Author: Morgan Allison
 Software: Anaconda 2.1.0 (Python 2.7.6, 64-bit) http://continuum.io/downloads
-Description: This script reads in a streamed data file created by the RSA300,
+Description: This script reads in a .r3f file created by the RSA306,
 parses out all the metadata, saves the raw data, converts to IQ data, and exports
 a *.mat file that is readable by SignalVu-PC
 
@@ -96,14 +96,20 @@ class R3F:
 		#ofilename = raw_input(
 		#	'Enter output file name including extension(.mat).\n> ')
 		ifilename = 'yar.r3f'
-		ofilename = 'yar.mat'
 		self.infile = base_directory + ifilename
-		self.outfile = base_directory + ofilename
+		self.outfile = base_directory + ifilename[:-4]
 
 		md_instructions = ("0=display nothing\n1=display header data" +
 		"\n2=plot correction tables\n3=display 1 and 2\n> ")
 		self.disp_flag = raw_input(md_instructions)
-		self.footer_flag = raw_input('0=discard footer\n1=save footer\n> ')
+		
+		if '.r3h' in self.infile or '.r3a' in self.infile:
+			print('\nBecause a .r3f file was not chosen, ' +
+				'footer data cannot be extracted.\n')
+			self.footer_flag = '0'
+		else:
+			self.footer_flag = raw_input('0=discard footer\n1=save footer\n> ')
+
 		self.ADC = []
 		self.IQ = []
 		self.footer = []
@@ -117,16 +123,16 @@ class R3F:
 		# correction plots, both, or neither
 		if self.disp_flag == '3':
 			self.print_metadata()
-			print('\nMetadata printed and channel correction graphs plotted.')
+			print('Metadata printed and channel correction graphs plotted.\n')
 			self.plot_graphs()
 		elif self.disp_flag == '2':
-			print('\nChannel correction graphs plotted.')
+			print('Channel correction graphs plotted.\n')
 			self.plot_graphs()
 		elif self.disp_flag == '1':
 			self.print_metadata()
-			print('\nMetadata parsed and printed.')
+			print('Metadata parsed and printed.\n')
 		elif self.disp_flag== '0':
-			print('\nData parsed.')
+			print('Data parsed.')
 		else: 
 			print('Invalid choice for \'metadisplay\' variable. Select 0, 1, 2, or 3.')
 
@@ -136,10 +142,15 @@ class R3F:
 		# np.fromstring() allows the user to specify data type
 		# unpack() saves data as a tuple, which can be used for printing
 		# but not calculations
+		if '.r3a' in self.infile or '.r3h' in self.infile:
+			self.infile = self.infile[:-1] + 'h'
+			print('\nYou specified a \'raw\' file format.\n' +
+				'Header data is contained in .r3h files.\n' +
+				'I\'ve loaded the .r3h file.\n')
 		try:
 			data = open(self.infile, 'rb').read(16384)
 		except IOError:
-			print('\nInvalid input file. Check the input file name and try again.\n')
+			print('\nCannot open file. Check the input file name and try again.\n')
 			quit()
 
 		# Get and print File ID and Version Info sections of the header
@@ -248,7 +259,7 @@ class R3F:
 		print('CHANNEL AND SIGNAL PATH CORRECTION')
 		print('ADC Scale Factor: %12.12f' % self.chcorr.adcscale)
 		print('Signal Path Delay: %f nsec' % (self.chcorr.pathdelay*1e9))
-		print('Correction Type (0=LF, 1=IF): %i' % self.chcorr.correctiontype)
+		print('Correction Type (0=LF, 1=IF): %i\n' % self.chcorr.correctiontype)
 
 	def plot_graphs(self):
 		# This function plots the amplitude and phase correction 
@@ -265,23 +276,28 @@ class R3F:
 		plt.clf()
 
 	def get_adc_samples(self):
+		if '.r3a' in self.infile or '.r3h' in self.infile:
+			self.infile = self.infile[:-1] + 'a'
+			print('\nYou specified a \'raw\' file format.\n' +
+				'Sample data is contained in .r3a files.\n' +
+				'I\'ve loaded the .r3a file.\n')
 		try:
 			data = open(self.infile, 'rb')
 		except IOError:
-			print('\nInvalid input file. Check the input file name and try again.\n')
+			print('\nCannot open file. Check the input file name and try again.\n')
 			quit()
 		filesize = os.path.getsize(self.infile)
 
 		#Filter file type and read the file appropriately
 		if '.r3f' in self.infile:
-			numframes = (filesize/self.dformat.framesize) - 1
-			print('Number of Frames: %d' % numframes)
+			self.numframes = (filesize/self.dformat.framesize) - 1
+			print('Number of Frames: {}\n'.format(self.numframes))
 			data.seek(self.dformat.frameoffset)
-			adcdata = np.empty(numframes*self.dformat.samplesize)
+			adcdata = np.empty(self.numframes*self.dformat.samplesize)
 			fstart = 0
 			fstop = self.dformat.samplesize
-			self.footer = range(0,numframes)
-			for i in range(numframes):
+			self.footer = range(0,self.numframes)
+			for i in range(self.numframes):
 				frame = data.read(self.dformat.nonsampleoffset)
 				adcdata[fstart:fstop] = np.fromstring(frame, dtype=np.int16)
 				fstart = fstop
@@ -294,6 +310,8 @@ class R3F:
 					self.footer[i] = self.parse_footer(temp_ftr)
 		elif '.r3a' in self.infile:
 			adcdata = np.fromfile(self.infile, dtype=np.int16)
+		else:
+			print('Invalid file type. Please specify a .r3f, .r3a, or .r3h file.\n')
 
 		#Scale ADC data
 		self.ADC = adcdata*self.chcorr.adcscale
@@ -330,7 +348,7 @@ class R3F:
 		Q = signal.lfilter(IQfilter, 1.0, Q)
 		IQ = I + 1j*Q
 		IQ = 2*IQ
-		print('Digital Down Conversion Complete.')
+		print('Digital Down Conversion Complete.\n')
 		self.IQ = IQ
 
 	def save_mat_file(self):
@@ -341,7 +359,24 @@ class R3F:
 		Span = self.dformat.bandwidth
 		sio.savemat(self.outfile, {'InputCenter':InputCenter,'Span':Span,'XDelta':XDelta,
 			'Y':Y,'InputZoom':InputZoom}, format='5')
-		print('File saved at %s.' % self.outfile)
+		print('Data file saved at {}.mat'.format(self.outfile))
+
+	def save_footer_file(self):
+		if self.footer_flag == '1':
+			fname = self.outfile + '.txt'
+			ffile = open(fname, 'w')
+			for i in range(self.numframes):
+				ffile.write(str(self.footer[i].frame_descr))
+				ffile.write(str(self.footer[i].frame_id))
+				ffile.write(str(self.footer[i].trigger2_idx))
+				ffile.write(str(self.footer[i].trigger1_idx))
+				ffile.write(str(self.footer[i].time_sync_idx))
+				ffile.write(str(self.footer[i].frame_status))
+				ffile.write(str(self.footer[i].timestamp))
+				ffile.write('\n')
+			ffile.close()
+			print('Footer file saved at {}.\n'.format(fname))
+
 
 	"""
 	def IQ_correction(IQ, metadata):
@@ -377,31 +412,7 @@ def main():
 	r3f.get_adc_samples()
 	r3f.ddc()
 	r3f.save_mat_file()
-	"""
-	if '.r3f' in infile:
-		metadata = get_header_data(infile, metadisplay)
-		adcdata = get_adc_samples(infile, metadata, footer_flag)
-	elif '.r3h' in infile:
-		headerinfile = infile
-		datainfile = infile[:-1] + 'a'
-		metadata = get_header_data(headerinfile, metadisplay)
-		adcdata = get_adc_samples(datainfile, metadata, footer_flag)
-		print('\nYou specified a *.r3h file extension.')
-		print('I used the file you specified to get the header data.')
-		print('I found the associated *.r3a file and read ADC data from it.')
-		print('The file I used is located at{0}'.format(datainfile))
-	elif '.r3a' in infile:
-		datainfile = infile
-		headerinfile = infile[:-1] + 'h'
-		metadata = get_header_data(headerinfile, metadisplay)
-		adcdata = get_adc_samples(datainfile, metadata, footer_flag)
-		print('\nYou specified a *.r3a file extension.')
-		print('I used the file you specified to get the ADC data.')
-		print('I found the associated *.r3h file and read header data from it.')
-		print('The file I used is located at {0}'.format(headerinfile))
-	else:
-		print('\nInvalid input file. Check the \'infile\' variable and try again.')
-		quit()
-	"""
+	r3f.save_footer_file()
+	
 if __name__ == '__main__':
 	main()
