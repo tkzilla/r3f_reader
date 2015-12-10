@@ -65,7 +65,7 @@ class DataFormat:
 		self.corrected = []
 		self.timetype = []
 		self.reftime = []
-		self.timesamples = []
+		self.clocksamples = []
 		self.timesamplerate = []
 
 class ChannelCorrection:
@@ -122,16 +122,16 @@ class R3F:
 		# correction plots, both, or neither
 		if self.disp_flag == '3':
 			self.print_metadata()
-			print('Metadata printed and channel correction graphs plotted.\n')
+			print('Header printed and channel correction graphs plotted.\n')
 			self.plot_graphs()
 		elif self.disp_flag == '2':
 			print('Channel correction graphs plotted.\n')
 			self.plot_graphs()
 		elif self.disp_flag == '1':
 			self.print_metadata()
-			print('Metadata parsed and printed.\n')
+			print('Header printed.\n')
 		elif self.disp_flag== '0':
-			print('Data parsed.')
+			print('Header parsed.')
 		else: 
 			print('Invalid choice for \'metadisplay\' variable. Select 0, 1, 2, or 3.')
 
@@ -143,9 +143,9 @@ class R3F:
 		# but not calculations
 		if '.r3a' in self.infile or '.r3h' in self.infile:
 			self.infile = self.infile[:-1] + 'h'
-			print('\nYou specified a \'raw\' file format.\n' +
+			print('You specified a \'raw\' file format.\n' +
 				'Header data is contained in .r3h files.\n' +
-				'I\'ve loaded the .r3h file.\n')
+				'I\'ve loaded the .r3h file to get header data.\n')
 		try:
 			data = open(self.infile, 'rb').read(16384)
 		except IOError:
@@ -174,7 +174,11 @@ class R3F:
 		self.inststate.triglevel = unpack('1d', data[1068:1076])
 
 		# Get and print Data Format section of the header
-		self.dformat.datatype = unpack('1I', data[2048:2052])
+		#self.dformat.datatype = unpack('1I', data[2048:2052])
+		self.dformat.datatype = np.fromstring(
+			data[2048:2052], dtype=np.uint32)
+		if self.dformat.datatype == 161:
+			self.dformat.datatype = 2 #bytes per sample
 		self.dformat.frameoffset = np.fromstring(
 			data[2052:2056], dtype=np.uint32)
 		self.dformat.framesize = np.fromstring(
@@ -188,12 +192,14 @@ class R3F:
 			data[2072:2076], dtype=np.uint32)
 		self.dformat.ifcenterfrequency = np.fromstring(
 			data[2076:2084], dtype=np.double)
-		self.dformat.samplerate = unpack('1d', data[2084:2092])
+		#self.dformat.samplerate = unpack('1d', data[2084:2092])
+		self.dformat.samplerate = np.fromstring(
+			data[2084:2092], dtype=np.double)
 		self.dformat.bandwidth = unpack('1d', data[2092:2100])
 		self.dformat.corrected = unpack('1I', data[2100:2104])
 		self.dformat.timetype = unpack('1I', data[2104:2108])
 		self.dformat.reftime = unpack('7i', data[2108:2136])
-		self.dformat.timesamples = unpack('1Q', data[2136:2144])
+		self.dformat.clocksamples = unpack('1Q', data[2136:2144])
 		self.dformat.timesamplerate = np.fromstring(
 			data[2144:2152], dtype=np.uint64)
 
@@ -239,7 +245,9 @@ class R3F:
 		print('Trigger Level: %d dBm\n' % self.inststate.triglevel)
 
 		print('DATA FORMAT')
-		print('Data Type: %i' % self.dformat.datatype)
+		if self.dformat.datatype == 161:
+			self.dformat.datatype = 2 	#bytes per sample
+		print('Data Type: %i bytes per sample' % self.dformat.datatype)
 		print('Offset to first frame (bytes): %i' % self.dformat.frameoffset)
 		print('Frame Size (bytes): %i' % self.dformat.framesize)
 		print('Offset to sample data (bytes): %i' % self.dformat.sampleoffset)
@@ -252,7 +260,7 @@ class R3F:
 		print('Corrected data status: %i' % self.dformat.corrected)
 		print('Time Type (0=local, 1=remote): %i' % self.dformat.timetype)
 		print('Reference Time: %i %i/%i at %i:%i:%i:%i' % self.dformat.reftime)
-		print('Sample count: %i' % self.dformat.timesamples)
+		print('Clock sample count: %i' % self.dformat.clocksamples)
 		print('Sample ticks per second: %i\n' % self.dformat.timesamplerate)
 
 		print('CHANNEL AND SIGNAL PATH CORRECTION')
@@ -274,37 +282,48 @@ class R3F:
 		plt.show()
 		plt.clf()
 
-	def get_adc_samples(self):
+	def file_splitter(self):
+		try:
+			self.data = open(self.infile, 'rb')
+		except IOError:
+			print('\nCannot open file. Check the input file name and try again.\n')
+			quit()
 		if '.r3a' in self.infile or '.r3h' in self.infile:
 			self.infile = self.infile[:-1] + 'a'
 			print('\nYou specified a \'raw\' file format.\n' +
 				'Sample data is contained in .r3a files.\n' +
-				'I\'ve loaded the .r3a file.\n')
-		try:
-			data = open(self.infile, 'rb')
-		except IOError:
-			print('\nCannot open file. Check the input file name and try again.\n')
-			quit()
-		filesize = os.path.getsize(self.infile)
+				'I\'ve loaded the .r3a file to get ADC data.\n')
 
+			self.filesize = os.path.getsize(self.infile)
+			self.filelength = self.filesize/self.dformat.datatype/self.dformat.samplerate
+			print('File size is: {} bytes.\nFile Length is {} seconds.\n'.format(
+				self.filesize, self.filelength))
+		elif '.r3f' in self.infile:
+			self.numframes = (self.filesize/self.dformat.framesize) - 1
+			self.filelength = self.numframes*(self.dformat.samplesize/self.dformat.samplerate)
+			self.numframes = (self.filesize/self.dformat.framesize) - 1
+			print('Number of Frames: {}\n'.format(self.numframes))
+			print('File size is: {} bytes.'.format(self.filesize))
+			self.filelength = ', '.join(map(str,self.filelength))
+			print('File length is: {} seconds.\n'.format(self.filelength))
+
+	def get_adc_samples(self):
 		#Filter file type and read the file appropriately
 		if '.r3f' in self.infile:
-			self.numframes = (filesize/self.dformat.framesize) - 1
-			print('Number of Frames: {}\n'.format(self.numframes))
-			data.seek(self.dformat.frameoffset)
+			self.data.seek(self.dformat.frameoffset)
 			adcdata = np.empty(self.numframes*self.dformat.samplesize)
 			fstart = 0
 			fstop = self.dformat.samplesize
 			self.footer = range(0,self.numframes)
 			for i in range(self.numframes):
-				frame = data.read(self.dformat.nonsampleoffset)
+				frame = self.data.read(self.dformat.nonsampleoffset)
 				adcdata[fstart:fstop] = np.fromstring(frame, dtype=np.int16)
 				fstart = fstop
 				fstop = fstop + self.dformat.samplesize
 				if self.footer_flag == '0':
-					data.seek(self.dformat.nonsamplesize,1)
+					self.data.seek(self.dformat.nonsamplesize,1)
 				else:
-					temp_ftr = data.read(self.dformat.nonsamplesize)
+					temp_ftr = self.data.read(self.dformat.nonsamplesize)
 					self.footer[i] = FooterClass()
 					self.footer[i] = self.parse_footer(temp_ftr)
 		elif '.r3a' in self.infile:
@@ -414,6 +433,7 @@ def main():
 	r3f = R3F()
 	r3f.get_header_data()
 	r3f.display_control()
+	r3f.file_splitter()
 	r3f.get_adc_samples()
 	r3f.ddc()
 	r3f.save_mat_file()
