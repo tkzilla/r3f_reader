@@ -100,6 +100,8 @@ class R3F:
 		"\n2=plot correction tables\n3=display 1 and 2\n> ")
 		self.disp_flag = raw_input(md_instructions)
 		
+		self.iq_flag = raw_input("0=discard IQ\n1=save IQ in .mat file\n>")
+
 		if '.r3h' in self.infile or '.r3a' in self.infile:
 			print('\nBecause a .r3f file was not chosen, ' +
 				'footer data cannot be extracted.\n')
@@ -316,60 +318,67 @@ class R3F:
 	def parse_footer(self, raw_footer):
 		footer = FooterClass()
 		footer.reserved = np.fromstring(raw_footer[0:6], dtype=np.uint16, count=3)
-		footer.frame_descr = np.fromstring(raw_footer[6:8], dtype=np.uint16, count=1)
 		footer.frame_id = np.fromstring(raw_footer[8:12], dtype=np.uint32, count=1)
 		footer.trigger2_idx = np.fromstring(raw_footer[12:14], dtype=np.uint16, count=1)
 		footer.trigger1_idx = np.fromstring(raw_footer[14:16], dtype=np.uint16, count=1)
 		footer.time_sync_idx = np.fromstring(raw_footer[16:18], dtype=np.uint16, count=1)
-		footer.frame_status = np.fromstring(raw_footer[18:20], dtype=np.uint16, count=1)
+		footer.frame_status = '{0:b}'.format(int(np.fromstring(raw_footer[18:20], 
+			dtype=np.uint16, count=1)))
 		footer.timestamp = np.fromstring(raw_footer[20:28], dtype=np.uint64, count=1)
 		
 		return footer
 
 	def ddc(self):
-		#Generate quadrature signals
-		IFfreq = self.dformat.ifcenterfrequency
-		size = len(self.ADC)
-		sampleperiod = 1.0/self.dformat.timesamplerate
-		xaxis = np.linspace(0,size*sampleperiod,size)
-		LO_I = np.sin(IFfreq*(2*np.pi)*xaxis)
-		LO_Q = np.cos(IFfreq*(2*np.pi)*xaxis)
+		if self.iq_flag =='1':
+			#Generate quadrature signals
+			IFfreq = self.dformat.ifcenterfrequency
+			size = len(self.ADC)
+			sampleperiod = 1.0/self.dformat.timesamplerate
+			xaxis = np.linspace(0,size*sampleperiod,size)
+			LO_I = np.sin(IFfreq*(2*np.pi)*xaxis)
+			LO_Q = np.cos(IFfreq*(2*np.pi)*xaxis)
 
-		#Run ADC data through digital down converter
-		I = self.ADC*LO_I
-		Q = self.ADC*LO_Q
-		nyquist = self.dformat.timesamplerate/2
-		cutoff = 40e6/nyquist
-		IQfilter = signal.firwin(300, cutoff, window=('kaiser', 10))
-		I = signal.lfilter(IQfilter, 1.0, I)
-		Q = signal.lfilter(IQfilter, 1.0, Q)
-		IQ = I + 1j*Q
-		IQ = 2*IQ
-		print('Digital Down Conversion Complete.\n')
-		self.IQ = IQ
+			#Run ADC data through digital down converter
+			I = self.ADC*LO_I
+			Q = self.ADC*LO_Q
+			nyquist = self.dformat.timesamplerate/2
+			cutoff = 40e6/nyquist
+			IQfilter = signal.firwin(300, cutoff, window=('kaiser', 10))
+			I = signal.lfilter(IQfilter, 1.0, I)
+			Q = signal.lfilter(IQfilter, 1.0, Q)
+			IQ = I + 1j*Q
+			IQ = 2*IQ
+			print('Digital Down Conversion Complete.\n')
+			self.IQ = IQ
 
 	def save_mat_file(self):
-		InputCenter = self.inststate.centerfrequency
-		XDelta = 1.0/self.dformat.timesamplerate
-		Y = self.IQ
-		InputZoom = np.uint8(1)
-		Span = self.dformat.bandwidth
-		sio.savemat(self.outfile, {'InputCenter':InputCenter,'Span':Span,'XDelta':XDelta,
-			'Y':Y,'InputZoom':InputZoom}, format='5')
-		print('Data file saved at {}.mat'.format(self.outfile))
+		if self.iq_flag == '1':
+			InputCenter = self.inststate.centerfrequency
+			XDelta = 1.0/self.dformat.timesamplerate
+			Y = self.IQ
+			InputZoom = np.uint8(1)
+			Span = self.dformat.bandwidth
+			sio.savemat(self.outfile, {'InputCenter':InputCenter,'Span':Span,'XDelta':XDelta,
+				'Y':Y,'InputZoom':InputZoom}, format='5')
+			print('Data file saved at {}.mat'.format(self.outfile))
 
 	def save_footer_file(self):
 		if self.footer_flag == '1':
 			fname = self.outfile + '.txt'
 			ffile = open(fname, 'w')
+			ffile.write('FrameID\tTrig1\tTrig2\tTSync\tFrmStatus\tTimeStamp\n')
 			for i in range(self.numframes):
-				ffile.write(str(self.footer[i].frame_descr))
-				ffile.write(str(self.footer[i].frame_id))
-				ffile.write(str(self.footer[i].trigger2_idx))
-				ffile.write(str(self.footer[i].trigger1_idx))
-				ffile.write(str(self.footer[i].time_sync_idx))
-				ffile.write(str(self.footer[i].frame_status))
-				ffile.write(str(self.footer[i].timestamp))
+				ffile.write(', '.join(map(str, self.footer[i].frame_id)))
+				ffile.write('\t')
+				ffile.write(', '.join(map(str, self.footer[i].trigger2_idx)))
+				ffile.write('\t')
+				ffile.write(', '.join(map(str, self.footer[i].trigger1_idx)))
+				ffile.write('\t')
+				ffile.write(', '.join(map(str, self.footer[i].time_sync_idx)))
+				ffile.write('\t')
+				ffile.write(self.footer[i].frame_status)
+				ffile.write('\t')
+				ffile.write(', '.join(map(str, self.footer[i].timestamp)))
 				ffile.write('\n')
 			ffile.close()
 			print('Footer file saved at {}.\n'.format(fname))
