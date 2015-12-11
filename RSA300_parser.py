@@ -15,7 +15,11 @@ and destination .mat file
 4. Choose display features
 5. Choose to save or discard footer
 
-Features to add: Apply correction to ADC samples
+TODO:
+1. Test file_splitter() functionality for > 1 second .r3f file 
+2. Add .r3a functionality to file_splitter()
+3. Figure out a coherent control method and function structure
+so users can use the .r3f class without having to be you
 """
 
 import os
@@ -25,6 +29,7 @@ from scipy.fftpack import fft, ifft
 from scipy import signal
 import scipy.io as sio
 import matplotlib.pyplot as plt
+import time
 
 """##########################Classes##########################"""
 
@@ -282,40 +287,53 @@ class R3F:
 		plt.show()
 		plt.clf()
 
-	def file_splitter(self):
+	def file_duration_check(self):
 		try:
 			self.data = open(self.infile, 'rb')
 		except IOError:
 			print('\nCannot open file. Check the input file name and try again.\n')
 			quit()
+		self.filesize = os.path.getsize(self.infile)
 		if '.r3a' in self.infile or '.r3h' in self.infile:
 			self.infile = self.infile[:-1] + 'a'
 			print('\nYou specified a \'raw\' file format.\n' +
 				'Sample data is contained in .r3a files.\n' +
 				'I\'ve loaded the .r3a file to get ADC data.\n')
 
-			self.filesize = os.path.getsize(self.infile)
 			self.filelength = self.filesize/self.dformat.datatype/self.dformat.samplerate
 			print('File size is: {} bytes.\nFile Length is {} seconds.\n'.format(
 				self.filesize, self.filelength))
 		elif '.r3f' in self.infile:
-			self.numframes = (self.filesize/self.dformat.framesize) - 1
+			self.numframes = int((self.filesize/self.dformat.framesize) - 1)
+			#because it needs to be unsigned to check looping in file_splitter correctly
 			self.filelength = self.numframes*(self.dformat.samplesize/self.dformat.samplerate)
-			self.numframes = (self.filesize/self.dformat.framesize) - 1
 			print('Number of Frames: {}\n'.format(self.numframes))
 			print('File size is: {} bytes.'.format(self.filesize))
-			self.filelength = ', '.join(map(str,self.filelength))
 			print('File length is: {} seconds.\n'.format(self.filelength))
+
+	def file_splitter(self):
+		fps = 13600
+		loop = 1
+		while self.numframes > 0:
+			if self.numframes > fps:
+				self.process_frames = fps
+			else:
+				self.process_frames = self.numframes
+			self.get_adc_samples()
+			self.ddc()
+			self.save_mat_file(loop)
+			self.numframes -= fps
+			loop += 1
 
 	def get_adc_samples(self):
 		#Filter file type and read the file appropriately
 		if '.r3f' in self.infile:
 			self.data.seek(self.dformat.frameoffset)
-			adcdata = np.empty(self.numframes*self.dformat.samplesize)
+			adcdata = np.empty(self.process_frames*self.dformat.samplesize)
 			fstart = 0
 			fstop = self.dformat.samplesize
-			self.footer = range(0,self.numframes)
-			for i in range(self.numframes):
+			self.footer = range(0,self.process_frames)
+			for i in range(self.process_frames):
 				frame = self.data.read(self.dformat.nonsampleoffset)
 				adcdata[fstart:fstop] = np.fromstring(frame, dtype=np.int16)
 				fstart = fstop
@@ -348,6 +366,7 @@ class R3F:
 		return footer
 
 	def ddc(self):
+		#print('Beginning Digital Down Conversion...')
 		if self.iq_flag =='1':
 			#Generate quadrature signals
 			IFfreq = self.dformat.ifcenterfrequency
@@ -362,24 +381,25 @@ class R3F:
 			Q = self.ADC*LO_Q
 			nyquist = self.dformat.timesamplerate/2
 			cutoff = 40e6/nyquist
-			IQfilter = signal.firwin(300, cutoff, window=('kaiser', 10))
+			IQfilter = signal.firwin(32, cutoff, window=('kaiser', 2.23))
 			I = signal.lfilter(IQfilter, 1.0, I)
 			Q = signal.lfilter(IQfilter, 1.0, Q)
 			IQ = I + 1j*Q
 			IQ = 2*IQ
-			print('Digital Down Conversion Complete.\n')
+			#print('Digital Down Conversion Complete.\n')
 			self.IQ = IQ
 
-	def save_mat_file(self):
+	def save_mat_file(self, loop):
 		if self.iq_flag == '1':
 			InputCenter = self.inststate.centerfrequency
 			XDelta = 1.0/self.dformat.timesamplerate
 			Y = self.IQ
 			InputZoom = np.uint8(1)
 			Span = self.dformat.bandwidth
-			sio.savemat(self.outfile, {'InputCenter':InputCenter,'Span':Span,'XDelta':XDelta,
+			filename = self.outfile + str(loop)
+			sio.savemat(filename, {'InputCenter':InputCenter,'Span':Span,'XDelta':XDelta,
 				'Y':Y,'InputZoom':InputZoom}, format='5')
-			print('Data file saved at {}.mat'.format(self.outfile))
+			#print('Data file saved at {}.mat'.format(self.outfile))
 
 	def save_footer_file(self):
 		if self.footer_flag == '1':
@@ -433,11 +453,21 @@ def main():
 	r3f = R3F()
 	r3f.get_header_data()
 	r3f.display_control()
+	r3f.file_duration_check()
 	r3f.file_splitter()
+	"""
 	r3f.get_adc_samples()
+	print('starting ddc')
+	start = time.clock()
 	r3f.ddc()
+	end = time.clock()
+	print('ddc complete')
+	print('time: {}'.format(end-start))
+	secondspersecond = (end-start)/r3f.filelength
+	print('Seconds of DDC processing per second of file length: {}'.format(secondspersecond))
 	r3f.save_mat_file()
 	r3f.save_footer_file()
-	
+	"""
+
 if __name__ == '__main__':
 	main()
