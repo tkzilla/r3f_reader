@@ -3,34 +3,28 @@ Script: RSA300 Streamed Data File Parser
 Date: 12/2015
 Author: Morgan Allison
 Software: Anaconda 2.1.0 (Python 2.7.6, 64-bit) http://continuum.io/downloads
-Description: This script reads in a .r3f file created by the RSA306,
-parses out all the metadata, saves the raw data, converts to IQ data, and exports
-a *.mat file that is readable by SignalVu-PC
+Description: This script reads in a .r3f/.r3a/.r3h file created by the RSA306,
+parses out all the metadata, saves the raw data, converts to IQ data, and
+exports a .mat file that is readable by SignalVu-PC and a .txt file
+containing footer data
 
 Directions: 
 1. Save a streamed data file from your RSA300
 2. Put it in C:\SignalVu-PC Files\
-3. Run the script, enter the name of your source .r3f file 
-and destination .mat file
+3. Run the script, enter the name of your source file
 4. Choose display features
 5. Choose to save or discard IQ data
 6. Choose to save or discard footer (iff .r3f file)
 
-TODO:
-2. Add .r3a functionality to file_muncher()
-3. Figure out a coherent control method and function structure
-so users can use the .r3f class without having to be you
 """
 
-import os
 from struct import *
 import numpy as np
-from scipy.fftpack import fft, ifft
+#from scipy.fftpack import fft, ifft
 from scipy import signal
 import scipy.io as sio
 import matplotlib.pyplot as plt
-import time
-import math
+import os, time, math
 
 """##########################Classes##########################"""
 
@@ -123,41 +117,40 @@ class R3F:
 		self.dformat = DataFormat()
 		self.chcorr = ChannelCorrection()
 
+	def convert(self):
+		# Main conversion function
+		# The order of these calls is important because display_control() 
+		# and file_muncher() are dependent on data from file_manager()
+		self.file_manager()
+		self.display_control()
+		self.file_muncher()
+
 	def display_control(self):
-		# Depending on the status of 'display,' display header data, 
-		# correction plots, both, or neither
+		# Depending on the status of 'disp_flag,' print header data, 
+		# display correction plots, do both, or do neither
 		if self.disp_flag == '3':
-			self.print_metadata()
+			self.print_header_data()
 			print('Header printed and channel correction graphs plotted.\n')
 			self.plot_graphs()
 		elif self.disp_flag == '2':
 			print('Channel correction graphs plotted.\n')
 			self.plot_graphs()
 		elif self.disp_flag == '1':
-			self.print_metadata()
+			self.print_header_data()
 			print('Header printed.\n')
 		elif self.disp_flag== '0':
 			print('Header parsed.')
 		else: 
-			print('Invalid choice for \'metadisplay\' variable. Select 0, 1, 2, or 3.')
+			print('Invalid choice. Select 0, 1, 2, or 3.')
+			quit()
 
 	def get_header_data(self):
 		# Parses the header section of *.r3f and *.r3h files.
-		# Certain fields use np.fromstring() rather than unpack()
-		# np.fromstring() allows the user to specify data type
+		# Certain fields use np.fromstring() rather than unpack() because
+		# np.fromstring() allows the user to specify data type.
 		# unpack() saves data as a tuple, which can be used for printing
 		# but not calculations
-		if '.r3a' in self.infilename or '.r3h' in self.infilename:
-			self.infilename = self.infilename[:-1] + 'h'
-			print('You specified a \'raw\' file format.\n' +
-				'Header data is contained in .r3h files.\n' +
-				'I\'ve loaded the .r3h file to get header data.\n')
-		try:
-			self.infile = open(self.infilename, 'rb')
-			data = self.infile.read(16384)
-		except IOError:
-			print('\nCannot open file. Check the input file name and try again.\n')
-			quit()
+		data = self.headerfile.read(16384)
 
 		# Get File ID and Version Info sections of the header
 		self.vinfo.fileid = data[:27]
@@ -223,14 +216,14 @@ class R3F:
 		phaseindex = freqindex + 501*4
 		ampindex = phaseindex + 501*4
 		self.chcorr.freqtable = np.fromstring(
-			data[freqindex:(freqindex+tableentries*4)], dtype=np.float32)
+			data[freqindex:(freqindex+501*4)], dtype=np.float32)
 		self.chcorr.phasetable = np.fromstring(
-			data[phaseindex:(phaseindex+tableentries*4)], dtype=np.float32)
+			data[phaseindex:ampindex], dtype=np.float32)
 		self.chcorr.amptable = np.fromstring(
 			data[ampindex:(ampindex+tableentries*4)], dtype=np.float32)
-		self.infile.close()
+		self.headerfile.close()
 		
-	def print_metadata(self):
+	def print_header_data(self):
 		# This function simply prints out all the header data
 		print('FILE INFO')
 		print('FileID: %s' % self.vinfo.fileid)
@@ -253,8 +246,6 @@ class R3F:
 		print('Trigger Level: %d dBm\n' % self.inststate.triglevel)
 
 		print('DATA FORMAT')
-		if self.dformat.datatype == 161:
-			self.dformat.datatype = 2 	#bytes per sample
 		print('Data Type: %i bytes per sample' % self.dformat.datatype)
 		print('Offset to first frame (bytes): %i' % self.dformat.frameoffset)
 		print('Frame Size (bytes): %i' % self.dformat.framesize)
@@ -290,24 +281,19 @@ class R3F:
 		plt.show()
 		plt.clf()
 
-	def file_duration_check(self):
-		# Opens the input file and checks its size (bytes) and duration (sec)
-		try:
-			self.infile = open(self.infilename, 'rb')
-		except IOError:
-			print('\nCannot open file. Check the input file name and try again.\n')
-			quit()
-		self.filesize = os.path.getsize(self.infilename)
-		if '.r3a' in self.infilename or '.r3h' in self.infilename:
-			self.infilename = self.infilename[:-1] + 'a'
-			print('\nYou specified a \'raw\' file format.\n' +
-				'Sample data is contained in .r3a files.\n' +
-				'I\'ve loaded the .r3a file to get ADC data.\n')
-
-			self.filelength = self.filesize/self.dformat.datatype/self.dformat.samplerate
-			print('File size is: {} bytes.\nFile Length is {} seconds.\n'.format(
-				self.filesize, self.filelength))
-		elif '.r3f' in self.infilename:
+	def file_manager(self):
+		# Creates header and data files out of user's chosen file for use in
+		# other functions, calculates file size in bytes and length in
+		# seconds, and calls get_header_data()
+		if '.r3f' in self.infilename:
+			try:
+				self.headerfile = open(self.infilename, 'rb')
+				self.datafile = open(self.infilename, 'rb')
+			except IOError:
+				print('\nCannot open file. Check the input file name and try again.\n')
+				quit()
+			self.get_header_data()
+			self.filesize = os.path.getsize(self.datafile.name)
 			self.numframes = int((self.filesize/self.dformat.framesize) - 1)
 			#because it needs to be unsigned to check looping in file_muncher correctly
 			self.filelength = self.numframes*(self.dformat.samplesize/self.dformat.samplerate)
@@ -315,25 +301,43 @@ class R3F:
 			print('File size is: {} bytes.'.format(self.filesize))
 			print('File length is: {} seconds.\n'.format(self.filelength))
 
+		elif '.r3a' in self.infilename or '.r3h' in self.infilename:
+			try:	
+				self.headerfile = open((self.infilename[:-1] + 'h'), 'rb')
+				self.datafile = open((self.infilename[:-1] + 'a'), 'rb')
+			except IOError:
+				print('\nCannot open file. Check the input file name and try again.\n')
+				quit()
+			self.get_header_data()
+			self.filesize = int(os.path.getsize(self.datafile.name))
+			self.filelength = self.filesize/self.dformat.datatype/self.dformat.samplerate
+			print('File size is: {} bytes.\nFile Length is {} seconds.\n'.format(
+				self.filesize, self.filelength))
+		else:
+			print('Compatible file extension not found, check input file and try again.')
+			quit()
+
 	def file_muncher(self):
-		# Determines if the file is longer than 1 second and splits accordingly
-		# This function calls get_adc_samples(), ddc(), and save_mat_file(),
+		# Determines if the file is > 1 second long and splits accordingly
+		# and calls get_adc_samples(), ddc(), and file_saver(),
 		# which are really the core processing components of this script
+		print('Beginning file conversion.\n')
 		loop = 0
-		if '.r3f' in self.infilename:
+		# formatted processing loop based on number of frames in data file
+		if '.r3f' in self.datafile.name:
 			fps = 13698
 			while self.numframes > 0:
 				if self.numframes > fps:
 					print('File is longer than 1 second, splitting into {} files.'
 						.format(int(math.ceil(self.filelength))))
-					process_frames = fps
+					process_data = fps
 				else:
-					process_frames = self.numframes
+					process_data = self.numframes
 				if loop == 0:
 					startpoint = self.dformat.frameoffset
 				elif loop > 0:
 					startpoint = loop*fps*self.dformat.framesize
-				self.get_adc_samples(process_frames, startpoint)
+				self.get_adc_samples(process_data, startpoint)
 				#print('Beginning DDC.')
 				#start = time.clock()
 				self.ddc()
@@ -341,38 +345,60 @@ class R3F:
 				#print('DDC processing time: {}'.format(end-start))
 				#secondspersecond = (end-start)/self.filelength
 				#print('Seconds of DDC processing per second of file length: {}'.format(secondspersecond))
-				self.save_mat_file(loop)
+				self.file_saver(loop)
 				self.numframes -= fps
 				loop += 1
-		#elif '.r3a' in self.infilename:
+		# raw processing loop based on file size in bytes
+		elif '.r3a' in self.datafile.name:
+			bytes_per_second = 224000000
+			while self.filesize > 0:
+				if self.filesize > bytes_per_second:
+					process_data = bytes_per_second/2 #two bytes per sample
+				else:
+					process_data = self.filesize
+				if loop == 0:
+					startpoint = 0
+				elif loop > 0:
+					startpoint = loop*bytes_per_second
+				self.get_adc_samples(process_data, startpoint)
+				self.ddc()
+				self.file_saver(loop)
+				self.filesize -= bytes_per_second
+				loop += 1
+		self.datafile.close()
 
-	def get_adc_samples(self, process_frames, startpoint):
+	def get_adc_samples(self, process_data, startpoint):
 		# Reads ADC samples from input file 
 		# Skips over or saves footer for .r3f files
 		# Reads in everything for .r3a files
 
 		#Filter file type and read the file appropriately
-		if '.r3f' in self.infilename:
-			self.infile.seek(startpoint)
-			adcsamples = np.empty(process_frames*self.dformat.samplesize)
+		if '.r3f' in self.datafile.name:
+			self.datafile.seek(startpoint)
+			adcsamples = np.empty(process_data*self.dformat.samplesize)
 			fstart = 0
 			fstop = self.dformat.samplesize
-			self.footer = range(process_frames)
-			for i in xrange(process_frames):
-				frame = self.infile.read(self.dformat.nonsampleoffset)
-				adcsamples[fstart:fstop] = np.fromstring(frame, dtype=np.int16)
+			self.footer = range(process_data)
+			for i in xrange(process_data):
+				frame = self.datafile.read(self.dformat.nonsampleoffset)
+				adcsamples[fstart:fstop] = np.fromstring(frame, 
+					dtype=np.int16)
 				fstart = fstop
 				fstop = fstop + self.dformat.samplesize
 				if self.footer_flag == '0':
-					self.infile.seek(self.dformat.nonsamplesize,1)
+					self.datafile.seek(self.dformat.nonsamplesize,1)
 				else:
-					temp_ftr = self.infile.read(self.dformat.nonsamplesize)
+					temp_ftr = self.datafile.read(self.dformat.nonsamplesize)
 					self.footer[i] = FooterClass()
 					self.footer[i] = self.parse_footer(temp_ftr)
-		elif '.r3a' in self.infilename:
-			adcsamples = np.fromfile(self.infilename, dtype=np.int16)
+		elif '.r3a' in self.datafile.name:
+			self.datafile.seek(startpoint)
+			adcsamples = np.empty(process_data)
+			adcsamples = np.fromfile(self.datafile, dtype=np.int16, 
+				count=process_data)
 		else:
-			print('Invalid file type. Please specify a .r3f, .r3a, or .r3h file.\n')
+			print('Invalid file type. Please specify a .r3f, r3a, or .r3h file.\n')
+			quit()
 
 		#Scale ADC data
 		self.ADC = adcsamples*self.chcorr.adcscale
@@ -380,14 +406,20 @@ class R3F:
 	def parse_footer(self, raw_footer):
 		# Parses footer based on internal footer documentation
 		footer = FooterClass()
-		footer.reserved = np.fromstring(raw_footer[0:6], dtype=np.uint16, count=3)
-		footer.frame_id = np.fromstring(raw_footer[8:12], dtype=np.uint32, count=1)
-		footer.trigger2_idx = np.fromstring(raw_footer[12:14], dtype=np.uint16, count=1)
-		footer.trigger1_idx = np.fromstring(raw_footer[14:16], dtype=np.uint16, count=1)
-		footer.time_sync_idx = np.fromstring(raw_footer[16:18], dtype=np.uint16, count=1)
-		footer.frame_status = '{0:b}'.format(int(np.fromstring(raw_footer[18:20], 
-			dtype=np.uint16, count=1)))
-		footer.timestamp = np.fromstring(raw_footer[20:28], dtype=np.uint64, count=1)
+		footer.reserved = np.fromstring(raw_footer[0:6], 
+			dtype=np.uint16, count=3)
+		footer.frame_id = np.fromstring(raw_footer[8:12],
+		 dtype=np.uint32, count=1)
+		footer.trigger2_idx = np.fromstring(raw_footer[12:14],
+		 dtype=np.uint16, count=1)
+		footer.trigger1_idx = np.fromstring(raw_footer[14:16],
+		 dtype=np.uint16, count=1)
+		footer.time_sync_idx = np.fromstring(raw_footer[16:18],
+		 dtype=np.uint16, count=1)
+		footer.frame_status = '{0:8b}'.format(
+			int(np.fromstring(raw_footer[18:20], dtype=np.uint16, count=1)))
+		footer.timestamp = np.fromstring(raw_footer[20:28], 
+			dtype=np.uint64, count=1)
 		
 		return footer
 
@@ -417,9 +449,10 @@ class R3F:
 			IQ = 2*IQ
 			self.IQ = IQ
 
-	def save_mat_file(self, loop):
+	def file_saver(self, loop):
 		# Saves a .mat file containing variables specified in the 
 		# SignalVu-PC help file
+		# Also saves a footer data in a .txt file
 		if self.iq_flag == '1':
 			InputCenter = self.inststate.centerfrequency
 			XDelta = 1.0/self.dformat.timesamplerate
@@ -427,14 +460,12 @@ class R3F:
 			InputZoom = np.uint8(1)
 			Span = self.dformat.bandwidth
 			filename = self.outfile + '_' + str(loop)
-			sio.savemat(filename, {'InputCenter':InputCenter,'Span':Span,'XDelta':XDelta,
-				'Y':Y,'InputZoom':InputZoom}, format='5')
+			sio.savemat(filename, {'InputCenter':InputCenter,'Span':Span, 
+				'XDelta':XDelta,'Y':Y,'InputZoom':InputZoom}, format='5')
 			print('Data file saved at {}.mat'.format(filename))
 
-	def save_footer_file(self):
-		# Saves footer data in a .txt file
 		if self.footer_flag == '1':
-			fname = self.outfile + '.txt'
+			fname = self.outfile + '_' + str(loop) + '.txt'
 			ffile = open(fname, 'w')
 			ffile.write('FrameID\tTrig1\tTrig2\tTSync\tFrmStatus\tTimeStamp\n')
 			for i in xrange(self.numframes):
@@ -451,7 +482,7 @@ class R3F:
 				ffile.write(', '.join(map(str, self.footer[i].timestamp)))
 				ffile.write('\n')
 			ffile.close()
-			print('Footer file saved at {}.\n'.format(fname))
+			print('Footer file saved at {}.'.format(fname))
 
 	"""
 	def IQ_correction(IQ, metadata):
@@ -482,23 +513,7 @@ class R3F:
 
 def main():
 	r3f = R3F()
-	r3f.get_header_data()
-	r3f.display_control()
-	r3f.file_duration_check()
-	r3f.file_muncher()
-	"""
-	r3f.get_adc_samples()
-	print('starting ddc')
-	start = time.clock()
-	r3f.ddc()
-	end = time.clock()
-	print('ddc complete')
-	print('time: {}'.format(end-start))
-	secondspersecond = (end-start)/r3f.filelength
-	print('Seconds of DDC processing per second of file length: {}'.format(secondspersecond))
-	r3f.save_mat_file()
-	r3f.save_footer_file()
-	"""
+	r3f.convert()
 
 if __name__ == '__main__':
 	main()
