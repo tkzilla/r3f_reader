@@ -2,7 +2,7 @@
 Script: RSA300 Streamed Data File Parser
 Date: 12/2015
 Author: Morgan Allison
-Software: Anaconda 2.1.0 (Python 2.7.6, 64-bit) http://continuum.io/downloads
+Software: Anaconda 2.1.0 (Python 2.7.8, 64-bit) http://continuum.io/downloads
 Description: This script reads in a .r3f/.r3a/.r3h file created by the RSA306,
 parses out all the metadata, saves the raw data, converts to IQ data, and
 exports a .mat file that is readable by SignalVu-PC and a .txt file
@@ -338,13 +338,7 @@ class R3F:
 				elif loop > 0:
 					startpoint = loop*fps*self.dformat.framesize
 				self.get_adc_samples(process_data, startpoint)
-				#print('Beginning DDC.')
-				#start = time.clock()
 				self.ddc()
-				#end = time.clock()
-				#print('DDC processing time: {}'.format(end-start))
-				#secondspersecond = (end-start)/self.filelength
-				#print('Seconds of DDC processing per second of file length: {}'.format(secondspersecond))
 				self.file_saver(loop)
 				self.numframes -= fps
 				loop += 1
@@ -483,33 +477,6 @@ class R3F:
 				ffile.write('\n')
 			ffile.close()
 			print('Footer file saved at {}.'.format(fname))
-
-	"""
-	def IQ_correction(IQ, metadata):
-		#amp and phase correction filter NOT FINISHED
-		#CorrectionFrameSize
-		framesize = self.chcorr.tableentries
-		amptable = self.chcorr.amptable
-		phasetable = self.chcorr.phasetable
-		#Convert magnitude from dB to V and phase from degrees to rad
-		amptable = 1/np.sqrt(10**(amptable/(2**15*10)))
-		phasetable = phasetable*np.pi/180
-		correct_real = amptable*np.cos(np.radians(phasetable))
-		correct_imag = amptable*np.sin(np.radians(phasetable))
-		correctFD = correct_real + 1j*correct_imag
-		corr_frames = len(self.IQ)/framesize
-		IQi = 0
-		
-		#Apply correction factors to IQ data frame by frame
-		for frame in xrange(0,corr_frames):
-			cframe = self.IQ[IQi:IQi+framesize]
-			cframe = fft(cframe)
-			cframe = cframe*correctFD
-			cframe = ifft(cframe)
-			self.IQ[IQi:IQi+framesize] = cframe
-			IQi = IQi+framesize
-		print('IQ Correction Applied.')
-	"""	
 
 def main():
 	r3f = R3F()
