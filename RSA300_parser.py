@@ -20,7 +20,6 @@ Directions:
 
 from struct import *
 import numpy as np
-#from scipy.fftpack import fft, ifft
 from scipy import signal
 import scipy.io as sio
 import matplotlib.pyplot as plt
