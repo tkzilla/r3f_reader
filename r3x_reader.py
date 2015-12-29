@@ -338,7 +338,7 @@ class R3F:
 					startpoint = loop*fps*self.dformat.framesize
 				self.get_adc_samples(process_data, startpoint)
 				self.ddc()
-				self.file_saver(loop)
+				self.file_saver(loop, process_data)
 				self.numframes -= fps
 				loop += 1
 		# raw processing loop based on file size in bytes
@@ -355,7 +355,7 @@ class R3F:
 					startpoint = loop*bytes_per_second
 				self.get_adc_samples(process_data, startpoint)
 				self.ddc()
-				self.file_saver(loop)
+				self.file_saver(loop, process_data)
 				self.filesize -= bytes_per_second
 				loop += 1
 		self.datafile.close()
@@ -442,7 +442,7 @@ class R3F:
 			IQ = 2*IQ
 			self.IQ = IQ
 
-	def file_saver(self, loop):
+	def file_saver(self, loop, process_data):
 		# Saves a .mat file containing variables specified in the 
 		# SignalVu-PC help file
 		# Also saves a footer data in a .txt file
@@ -461,7 +461,7 @@ class R3F:
 			fname = self.outfile + '_' + str(loop) + '.txt'
 			ffile = open(fname, 'w')
 			ffile.write('FrameID\tTrig1\tTrig2\tTSync\tFrmStatus\tTimeStamp\n')
-			for i in xrange(self.numframes):
+			for i in xrange(process_data):
 				ffile.write(', '.join(map(str, self.footer[i].frame_id)))
 				ffile.write('\t')
 				ffile.write(', '.join(map(str, self.footer[i].trigger2_idx)))
