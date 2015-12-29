@@ -266,6 +266,7 @@ class R3F:
 		print('Signal Path Delay: %f nsec' % (self.chcorr.pathdelay*1e9))
 		print('Correction Type (0=LF, 1=IF): %i\n' % self.chcorr.correctiontype)
 
+
 	def plot_graphs(self):
 		# This function plots the amplitude and phase correction 
 		# tables as a function of IF frequency
@@ -279,6 +280,7 @@ class R3F:
 		plt.xlabel('IF Frequency (MHz)')
 		plt.show()
 		plt.clf()
+
 
 	def file_manager(self):
 		# Creates header and data files out of user's chosen file for use in
