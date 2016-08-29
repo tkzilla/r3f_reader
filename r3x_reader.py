@@ -281,7 +281,6 @@ class R3F:
 		plt.show()
 		plt.clf()
 
-
 	def file_manager(self):
 		# Creates header and data files out of user's chosen file for use in
 		# other functions, calculates file size in bytes and length in
