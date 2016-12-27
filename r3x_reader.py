@@ -15,7 +15,7 @@ Directions:
 4. Choose display features
 5. Choose to save or discard IQ data
 6. Choose to save or discard footer (iff .r3f file)
-
+-`-----
 """
 
 from struct import *
@@ -91,25 +91,25 @@ class FooterClass:
 class R3F:
 	def __init__(self):
 		base_directory = 'C:\\SignalVu-PC Files\\'
-		fname = raw_input(
+		fname = input(
 			'Enter input file name including extension (.r3f/.r3a/.r3h).\n> ')
 		self.infilename = base_directory + fname
 		self.outfile = base_directory + fname[:-4]
 
 		md_instructions = ("0=display nothing\n1=display header data" +
 		"\n2=plot correction tables\n3=display 1 and 2\n> ")
-		self.disp_flag = raw_input(md_instructions)
+		self.disp_flag = input(md_instructions)
 		
-		self.header_flag = raw_input("0=discard header\n1=save header in .csv file\n>")
+		self.header_flag = input("0=discard header\n1=save header in .csv file\n>")
 
-		self.iq_flag = raw_input("0=discard IQ\n1=save IQ in .mat file\n>")
+		self.iq_flag = input("0=discard IQ\n1=save IQ in .mat file\n>")
 
 		if '.r3h' in self.infilename or '.r3a' in self.infilename:
 			print('\nBecause a .r3f file was not chosen, ' +
 				'footer data cannot be extracted.\n')
 			self.footer_flag = '0'
 		else:
-			self.footer_flag = raw_input('0=discard footer\n1=save footer\n> ')
+			self.footer_flag = input('0=discard footer\n1=save footer\n> ')
 
 		self.ADC = []
 		self.IQ = []
@@ -378,7 +378,7 @@ class R3F:
 			fstart = 0
 			fstop = self.dformat.samplesize
 			self.footer = range(process_data)
-			for i in xrange(process_data):
+			for i in range(process_data):
 				frame = self.datafile.read(self.dformat.nonsampleoffset)
 				adcsamples[fstart:fstop] = np.fromstring(frame, 
 					dtype=np.int16)
@@ -520,7 +520,7 @@ class R3F:
 			fname = self.outfile + '_' + str(loop) + '.txt'
 			ffile = open(fname, 'w')
 			ffile.write('FrameID\tTrig1\tTrig2\tTSync\tFrmStatus\tTimeStamp\n')
-			for i in xrange(process_data):
+			for i in range(process_data):
 				ffile.write(', '.join(map(str, self.footer[i].frame_id)))
 				ffile.write('\t')
 				ffile.write(', '.join(map(str, self.footer[i].trigger2_idx)))
