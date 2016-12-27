@@ -319,7 +319,7 @@ class R3F:
 			self.fileLength = self.numFrames*(self.dFormat.sampleSize/self.dFormat.sRate)
 			print('Number of Frames: {}\n'.format(self.numFrames))
 			print('File size is: {} bytes.'.format(self.fileSize))
-			print('File length is: {} seconds.'.format(self.fileLength))
+			print('File length is: {:.6f} seconds.'.format(self.fileLength[0]))
 
 		elif '.r3a' in self.inFileName or '.r3h' in self.inFileName:
 			try:	
@@ -402,9 +402,9 @@ class R3F:
 				if self.footerFlag == '0':
 					self.dataFile.seek(self.dFormat.nonSampleSize[0],1)
 				else:
-					temp_ftr = self.dataFile.read(self.dFormat.nonSampleSize[0])
+					tempFtr = self.dataFile.read(self.dFormat.nonSampleSize[0])
 					# self.footer[i] = FooterClass()
-					self.footer.append(self.parse_footer(temp_ftr))
+					self.footer.append(self.parse_footer(tempFtr))
 		elif '.r3a' in self.dataFile.name:
 			self.dataFile.seek(startPoint)
 			adcsamples = np.empty(processData)
@@ -469,56 +469,68 @@ class R3F:
 		# This function exports header data to a csv file
 		fName = self.outFile + '.csv'
 		with open(fName, 'w') as csvfile:
-			hWriter = csv.writer(csvfile)
-			hWriter.writerow('\nFILE INFO')
-			hWriter.writerow('FileID: {}'.format(self.vInfo.fileid.decode()))
-			hWriter.writerow('Endian Check: {:#x}'.format(self.vInfo.endian[0]))
-			hWriter.writerow('File Format Version: {0[0]}.{0[1]}.{0[2]}.{0[3]}'.format(
-				self.vInfo.fFormatVer))
-			hWriter.writerow('API Version: {0[0]}.{0[1]}.{0[2]}.{0[3]}'.format(
-				self.vInfo.apiVersion))
-			hWriter.writerow('FX3 Version: {0[0]}.{0[1]}.{0[2]}.{0[3]}'.format(
-				self.vInfo.fx3Version))
-			hWriter.writerow('FPGA Version: {0[0]}.{0[1]}.{0[2]}.{0[3]}'.format(
-				self.vInfo.fpgaVersion))
-			hWriter.writerow('Device Serial Number: {}'.format(self.vInfo.deviceSN.decode()))
+			w = csv.writer(csvfile, )
+			w.writerow(['FILE INFO'])
+			w.writerow(['FileID: ', self.vInfo.fileid.decode()])
+			w.writerow(['Endian Check: ', 
+				'{:#x}'.format(self.vInfo.endian[0])])
+			w.writerow(['File Format Version: ', 
+				'{0[0]}.{0[1]}.{0[2]}.{0[3]}'.format(self.vInfo.fFormatVer)])
+			w.writerow(['API Version:', 
+				'{0[0]}.{0[1]}.{0[2]}.{0[3]}'.format(self.vInfo.apiVersion)])
+			w.writerow(['FX3 Version:', 
+				'{0[0]}.{0[1]}.{0[2]}.{0[3]}'.format(self.vInfo.fx3Version)])
+			w.writerow(['FPGA Version:', 
+				'{0[0]}.{0[1]}.{0[2]}.{0[3]}'.format(self.vInfo.fpgaVersion)])
+			w.writerow(['Device Serial Number:', self.vInfo.deviceSN.decode()])
+			
+			w.writerow(['INSTRUMENT STATE'])
+			w.writerow(['Reference Level:', self.instState.refLevel[0], 'dBm'])
+			w.writerow(['Center Frequency:', self.instState.cf[0], 'Hz'])
+			w.writerow(['temp:', self.instState.temp[0], 'C'])
+			w.writerow(['Alignment status:', self.instState.alignment[0]])
+			w.writerow(['Frequency Reference:', self.instState.freqRef[0]])
+			w.writerow(['Trigger mode:', self.instState.trigMode[0]])
+			w.writerow(['Trigger Source:', self.instState.trigSource[0]])
+			w.writerow(['Trigger Transition: ', self.instState.trigTrans[0]])
+			w.writerow(['Trigger Level:', self.instState.trigLevel[0], 'dBm'])
 
-			hWriter.writerow('\nINSTRUMENT STATE')
-			hWriter.writerow('Reference Level: {:.2f} dBm'.format(
-				self.instState.refLevel[0]))
-			hWriter.writerow('Center Frequency: {} Hz'.format(
-				self.instState.cf[0]))
-			hWriter.writerow('temp: {} C'.format(self.instState.temp[0]))
-			hWriter.writerow('Alignment status: {}'.format(self.instState.alignment[0]))
-			hWriter.writerow('Frequency Reference: {}'.format(self.instState.freqRef[0]))
-			hWriter.writerow('Trigger mode: {}'.format(self.instState.trigMode[0]))
-			hWriter.writerow('Trigger Source: {}'.format(self.instState.trigSource[0]))
-			hWriter.writerow('Trigger Transition: {}'.format(self.instState.trigTrans[0]))
-			hWriter.writerow('Trigger Level: {} dBm'.format(self.instState.trigLevel[0]))
+			w.writerow(['DATA FORMAT'])
+			w.writerow(['Data Type:', self.dFormat.dataType, 
+				'bytes per sample'])
+			w.writerow(['Offset to first frame:', 
+				self.dFormat.frameOffset[0], 'bytes'])
+			w.writerow(['Frame Size:', self.dFormat.frameSize[0], 'bytes'])
+			w.writerow(['Offset to sample data:', self.dFormat.sampleOffset[0], 
+				'bytes'])
+			w.writerow(['Samples in Frame:', self.dFormat.sampleSize[0]])
+			w.writerow(['Offset to non-sample data:', 
+				self.dFormat.nonsampleOffset[0]])
+			w.writerow(['Size of non-sample data:', 
+				self.dFormat.nonSampleSize[0]])
+			w.writerow(['IF Center Frequency:', self.dFormat.ifcf[0], 'Hz'])
+			w.writerow(['Sample Rate:', self.dFormat.sRate[0], 'S/sec'])
+			w.writerow(['Bandwidth:', self.dFormat.bandwidth[0], 'Hz'])
+			w.writerow(['Corrected data status:', self.dFormat.corrected[0]])
+			w.writerow(['Time Type (0=local, 1=remote):', 
+				self.dFormat.timeType[0]])
+			w.writerow(['Reference Time:', 
+				'{0[1]}/{0[2]}/{0[0]}'.format(self.dFormat.refTime), 
+				'{0[3]}:{0[4]}:{0[5]}.{0[6]}'.format(self.dFormat.refTime)])
+			w.writerow(['Clock sample count:', self.dFormat.clockSamples[0]])
+			w.writerow(['Sample ticks per second:', 
+				self.dFormat.timeSampleRate[0]])
+			w.writerow(['UTC Time:', 
+				'{0[1]}/{0[2]}/{0[0]}'.format(self.dFormat.utcTime), 
+				'{0[3]}:{0[4]}:{0[5]}.{0[6]}\n'.format(self.dFormat.utcTime)])
 
-			hWriter.writerow('\nDATA FORMAT')
-			hWriter.writerow('Data Type: {} bytes per sample'.format(self.dFormat.dataType))
-			hWriter.writerow('Offset to first frame (bytes): {}'.format(self.dFormat.frameOffset[0]))
-			hWriter.writerow('Frame Size (bytes): {}'.format(self.dFormat.frameSize[0]))
-			hWriter.writerow('Offset to sample data (bytes): {}'.format(self.dFormat.sampleOffset[0]))
-			hWriter.writerow('Samples in Frame: {}'.format(self.dFormat.sampleSize[0]))
-			hWriter.writerow('Offset to non-sample data: {}'.format(self.dFormat.nonsampleOffset[0]))
-			hWriter.writerow('Size of non-sample data: {}'.format(self.dFormat.nonSampleSize[0]))
-			hWriter.writerow('IF Center Frequency: {} Hz'.format(
-				self.dFormat.ifcf[0]))
-			hWriter.writerow('Sample Rate: {} S/sec'.format(self.dFormat.sRate[0]))
-			hWriter.writerow('Bandwidth: {} Hz'.format(self.dFormat.bandwidth[0]))
-			hWriter.writerow('Corrected data status: {}'.format(self.dFormat.corrected[0]))
-			hWriter.writerow('Time Type (0=local, 1=remote): {}'.format(self.dFormat.timeType[0]))
-			hWriter.writerow('Reference Time: {0[1]}/{0[2]}/{0[0]} at {0[3]}:{0[4]}:{0[5]}.{0[6]}'.format(self.dFormat.refTime))
-			hWriter.writerow('Clock sample count: {}'.format(self.dFormat.clockSamples[0]))
-			hWriter.writerow('Sample ticks per second: {}'.format(self.dFormat.timeSampleRate[0]))
-			hWriter.writerow('UTC Time: {0[1]}/{0[2]}/{0[0]} at {0[3]}:{0[4]}:{0[5]}.{0[6]}\n'.format(self.dFormat.utcTime))
-
-			hWriter.writerow('\nCHANNEL AND SIGNAL PATH CORRECTION')
-			hWriter.writerow('ADC Scale Factor: {}'.format(self.chCorr.adcScale[0]))
-			hWriter.writerow('Signal Path Delay: {} nsec'.format(self.chCorr.pathDelay[0]*1e9))
-			hWriter.writerow('Correction Type (0=LF, 1=IF): {}'.format(self.chCorr.corrType[0]))
+			w.writerow(['CHANNEL AND SIGNAL PATH CORRECTION'])
+			w.writerow(['ADC Scale Factor:', self.chCorr.adcScale[0]])
+			w.writerow(['Signal Path Delay:', self.chCorr.pathDelay[0]*1e9, 
+				'nsec'])
+			w.writerow(['Correction Type (0=LF, 1=IF):', 
+				self.chCorr.corrType[0]])
+			
 
 					
 	def file_saver(self, loop, processData):
