@@ -15,7 +15,7 @@ Directions:
 4. Choose display features
 5. Choose to save or discard IQ data
 6. Choose to save or discard footer (iff .r3f file)
--`-----
+
 """
 
 from struct import *
@@ -23,7 +23,7 @@ import numpy as np
 from scipy import signal
 import scipy.io as sio
 import matplotlib.pyplot as plt
-import os, time, math, csv
+import os, time, math
 
 """##########################Classes##########################"""
 
@@ -91,25 +91,23 @@ class FooterClass:
 class R3F:
 	def __init__(self):
 		base_directory = 'C:\\SignalVu-PC Files\\'
-		fname = input(
+		fname = raw_input(
 			'Enter input file name including extension (.r3f/.r3a/.r3h).\n> ')
 		self.infilename = base_directory + fname
 		self.outfile = base_directory + fname[:-4]
 
 		md_instructions = ("0=display nothing\n1=display header data" +
 		"\n2=plot correction tables\n3=display 1 and 2\n> ")
-		self.disp_flag = input(md_instructions)
+		self.disp_flag = raw_input(md_instructions)
 		
-		self.header_flag = input("0=discard header\n1=save header in .csv file\n>")
-
-		self.iq_flag = input("0=discard IQ\n1=save IQ in .mat file\n>")
+		self.iq_flag = raw_input("0=discard IQ\n1=save IQ in .mat file\n>")
 
 		if '.r3h' in self.infilename or '.r3a' in self.infilename:
 			print('\nBecause a .r3f file was not chosen, ' +
 				'footer data cannot be extracted.\n')
 			self.footer_flag = '0'
 		else:
-			self.footer_flag = input('0=discard footer\n1=save footer\n> ')
+			self.footer_flag = raw_input('0=discard footer\n1=save footer\n> ')
 
 		self.ADC = []
 		self.IQ = []
@@ -378,7 +376,7 @@ class R3F:
 			fstart = 0
 			fstop = self.dformat.samplesize
 			self.footer = range(process_data)
-			for i in range(process_data):
+			for i in xrange(process_data):
 				frame = self.datafile.read(self.dformat.nonsampleoffset)
 				adcsamples[fstart:fstop] = np.fromstring(frame, 
 					dtype=np.int16)
@@ -448,63 +446,10 @@ class R3F:
 			IQ = 2*IQ
 			self.IQ = IQ
 
-
-	def export_header_data(self):
-		# This function exports header data to a csv file
-		fname = self.outfile + '.csv'
-		with open(fname, 'wb') as csvfile:
-			hWriter = csv.writer(csvfile, delimiter=',')
-			hWriter.writerow('HEADER INFO')
-			hWriter.writerow(['FileID:', '%s' % self.vinfo.fileid])
-			hWriter.writerow(['Endian Check:', '0x%x' % self.vinfo.endian])
-			hWriter.writerow(['File Format Version:', '%i.%i.%i.%i' % self.vinfo.fileformatversion])
-			hWriter.writerow(['API Version:', '%i.%i.%i.%i' % self.vinfo.apiversion])
-			hWriter.writerow(['FX3 Version:', '%i.%i.%i.%i' % self.vinfo.fx3version])
-			hWriter.writerow(['FPGA Version:', '%i.%i.%i.%i' % self.vinfo.fpgaversion])
-			hWriter.writerow(['Device Serial Number:', '%s' % self.vinfo.devicesn])
-
-			hWriter.writerow(['INSTRUMENT STATE'])
-			hWriter.writerow(['Reference Level:', '%d dBm' % self.inststate.referencelevel])
-			hWriter.writerow(['Center Frequency:', '%d Hz' % self.inststate.centerfrequency])
-			hWriter.writerow(['Temperature:', '%d C' % self.inststate.temperature])
-			hWriter.writerow(['Alignment status:', '%d' % self.inststate.alignment])
-			hWriter.writerow(['Frequency Reference:', '%d' % self.inststate.freqreference])
-			hWriter.writerow(['Trigger mode:', '%d' % self.inststate.trigmode])
-			hWriter.writerow(['Trigger Source:', '%d' % self.inststate.trigsource])
-			hWriter.writerow(['Trigger Transition:', '%d' % self.inststate.trigtrans])
-			hWriter.writerow(['Trigger Level:', '%d dBm\n' % self.inststate.triglevel])
-
-			hWriter.writerow(['DATA FORMAT'])
-			hWriter.writerow(['Data Type:', '%i bytes per sample' % self.dformat.datatype])
-			hWriter.writerow(['Offset to first frame (bytes):', '%i' % self.dformat.frameoffset])
-			hWriter.writerow(['Frame Size (bytes):', '%i' % self.dformat.framesize])
-			hWriter.writerow(['Offset to sample data (bytes):', '%i' % self.dformat.sampleoffset])
-			hWriter.writerow(['Samples in Frame:', '%i' % self.dformat.samplesize])
-			hWriter.writerow(['Offset to non-sample data:', '%i' % self.dformat.nonsampleoffset])
-			hWriter.writerow(['Size of non-sample data:', '%i' % self.dformat.nonsamplesize])
-			hWriter.writerow(['IF Center Frequency:', '%i Hz' % self.dformat.ifcenterfrequency])
-			hWriter.writerow(['Sample Rate:', '%i S/sec' % self.dformat.samplerate])
-			hWriter.writerow(['Bandwidth:', '%i Hz' % self.dformat.bandwidth])
-			hWriter.writerow(['Corrected data status:', '%i' % self.dformat.corrected])
-			hWriter.writerow(['Time Type (0=local, 1=remote):', '%i' % self.dformat.timetype])
-			hWriter.writerow(['Reference Time:', '%i %i/%i at %i:%i:%i.%i' % self.dformat.reftime])
-			hWriter.writerow(['Clock sample count:', '%i' % self.dformat.clocksamples])
-			hWriter.writerow(['Sample ticks per second:', '%i' % self.dformat.timesamplerate])
-			hWriter.writerow(['UTC Time:', '%i %i/%i at %i:%i:%i.%i\n' % self.dformat.utctime])
-
-			hWriter.writerow(['CHANNEL AND SIGNAL PATH CORRECTION'])
-			hWriter.writerow(['ADC Scale Factor:', '%12.12f' % self.chcorr.adcscale])
-			hWriter.writerow(['Signal Path Delay:', '%f nsec' % (self.chcorr.pathdelay*1e9)])
-			hWriter.writerow(['Correction Type (0=LF, 1=IF):', '%i\n' % self.chcorr.correctiontype])
-		
-		
 	def file_saver(self, loop, process_data):
 		# Saves a .mat file containing variables specified in the 
 		# SignalVu-PC help file
 		# Also saves a footer data in a .txt file
-		if self.header_flag == '1':
-			self.export_header_data()
-		
 		if self.iq_flag == '1':
 			InputCenter = self.inststate.centerfrequency
 			XDelta = 1.0/self.dformat.timesamplerate
@@ -520,7 +465,7 @@ class R3F:
 			fname = self.outfile + '_' + str(loop) + '.txt'
 			ffile = open(fname, 'w')
 			ffile.write('FrameID\tTrig1\tTrig2\tTSync\tFrmStatus\tTimeStamp\n')
-			for i in range(process_data):
+			for i in xrange(process_data):
 				ffile.write(', '.join(map(str, self.footer[i].frame_id)))
 				ffile.write('\t')
 				ffile.write(', '.join(map(str, self.footer[i].trigger2_idx)))
