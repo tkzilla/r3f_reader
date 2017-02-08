@@ -1,29 +1,34 @@
 """
-Script: RSA300 Streamed Data File Parser
-Date: 12/2015
+Script: USB RSA Streamed Data File Parser
 Author: Morgan Allison
-Software: Anaconda 2.1.0 (Python 2.7.8, 64-bit) http://continuum.io/downloads
-Description: This script reads in a .r3f/.r3a/.r3h file created by the RSA306,
+Date Created: 12/15
+Date Edited: 2/17
+Windows 7 64-bit
+Python 3.5.2 64-bit (Anaconda 4.2.0)
+To get Anaconda: http://continuum.io/downloads
+Anaconda includes NumPy, SciPy and MatPlotLib
+Description: This script reads in a .r3f/.r3a/.r3h file created by a USB RSA,
 parses out all the metadata, saves the raw data, converts to IQ data, and
 exports a .mat file that is readable by SignalVu-PC and a .txt file
 containing footer data
 
 Directions: 
-1. Save a streamed data file from your RSA300
+1. Save a streamed data file from your RSA
 2. Put it in C:\SignalVu-PC Files\
 3. Run the script, enter the name of your source file
 4. Choose display features
 5. Choose to save or discard IQ data
 6. Choose to save or discard footer (iff .r3f file)
--`-----
 """
 
-from struct import *
+from struct import unpack
 import numpy as np
-from scipy import signal
-import scipy.io as sio
+from scipy.signal import firwin, lfilter
+from scipy.io import savemat
+from time import perf_counter
+from os.path import getsize
 import matplotlib.pyplot as plt
-import os, time, math, csv
+import csv
 
 """##########################Classes##########################"""
 
@@ -31,93 +36,98 @@ class VersionInfo:
 	def __init__(self):
 		self.fileid = []
 		self.endian = []
-		self.fileformatversion = []
-		self.apiversion = []
-		self.fx3version = []
-		self.fpgaversion = []
-		self.devicesn = []
+		self.fFormatVer = []
+		self.apiVersion = []
+		self.fx3Version = []
+		self.fpgaVersion = []
+		self.deviceSN = []
 
 class InstrumentState:
 	def __init__(self):
-		self.referencelevel = []
-		self.centerfrequency = []
-		self.temperature = []
+		self.refLevel = []
+		self.cf = []
+		self.temp = []
 		self.alignment = []
-		self.freqreference = []
-		self.trigmode = []
-		self.trigsource = []
-		self.trigtrans = []
-		self.triglevel = []
+		self.freqRef = []
+		self.trigMode = []
+		self.trigSource = []
+		self.trigTrans = []
+		self.trigLevel = []
 
 class DataFormat:
 	def __init__(self):
-		self.datatype = []
-		self.frameoffset = []
-		self.framesize = []
-		self.sampleoffset = []
-		self.samplesize = []
-		self.nonsampleoffset = []
-		self.nonsamplesize = []
-		self.ifcenterfrequency = []
-		self.samplerate = []
+		self.dataType = []
+		self.frameOffset = []
+		self.frameSize = []
+		self.sampleOffset = []
+		self.sampleSize = []
+		self.nonsampleOffset = []
+		self.nonSampleSize = []
+		self.ifcf = []
+		self.sRate = []
 		self.bandwidth = []
 		self.corrected = []
-		self.timetype = []
-		self.reftime = []
-		self.clocksamples = []
-		self.timesamplerate = []
-		self.utctime = []
+		self.timeType = []
+		self.refTime = []
+		self.clockSamples = []
+		self.timeSampleRate = []
+		self.utcTime = []
 
 class ChannelCorrection:
 	def __init__(self):
-		self.adcscale = []
-		self.pathdelay = []
-		self.correctiontype = []
-		self.tableentries = []
-		self.freqtable = []
-		self.amptable = []
-		self.phasetable = []
+		self.adcScale = []
+		self.pathDelay = []
+		self.corrType = []
+		self.tableEntries = []
+		self.freqTable = []
+		self.ampTable = []
+		self.phaseTable = []
 
 class FooterClass:
 	def __init__(self):
-		self.frame_descr = []
-		self.frame_id = []
-		self.trigger2_idx = []
-		self.trigger1_idx = []
-		self.time_sync_idx = []
-		self.frame_status = []
+		self.frameDescr = []
+		self.frameId = []
+		self.trig2Idx = []
+		self.trig1Idx = []
+		self.timeSyncIdx = []
+		self.frameStatus = []
 		self.timestamp = []
 
 class R3F:
 	def __init__(self):
-		base_directory = 'C:\\SignalVu-PC Files\\'
-		fname = input(
-			'Enter input file name including extension (.r3f/.r3a/.r3h).\n> ')
-		self.infilename = base_directory + fname
-		self.outfile = base_directory + fname[:-4]
+		baseDirectory = 'C:\\SignalVu-PC Files\\'
+		fName = input('Enter input file name including extension (.r3f/.r3a/.r3h).\n> ')
+		self.inFileName = baseDirectory + fName
+		self.outFile = baseDirectory + fName[:-4]
+		self.dispFlag = self.headerFlag = self.iqFlag = self.footerFlag = -1024
+		dispFlagOptions = ['0', '1', '2', '3']
+		otherFlagOptions = ['0', '1']
 
-		md_instructions = ("0=display nothing\n1=display header data" +
-		"\n2=plot correction tables\n3=display 1 and 2\n> ")
-		self.disp_flag = input(md_instructions)
+		while self.dispFlag not in dispFlagOptions:
+			self.dispFlag = input("0=display nothing\n1=display header data" +
+						"\n2=plot correction tables\n3=display 1 and 2\n> ")
 		
-		self.header_flag = input("0=discard header\n1=save header in .csv file\n>")
+		while self.headerFlag not in otherFlagOptions:
+			self.headerFlag = input("0=discard header\n1=save header in .csv file\n>")
 
-		self.iq_flag = input("0=discard IQ\n1=save IQ in .mat file\n>")
+		while self.iqFlag not in otherFlagOptions:
+			self.iqFlag = input("0=discard IQ\n1=save IQ in .mat file\n>")
 
-		if '.r3h' in self.infilename or '.r3a' in self.infilename:
+		if '.r3h' in self.inFileName or '.r3a' in self.inFileName:
 			print('\nBecause a .r3f file was not chosen, ' +
 				'footer data cannot be extracted.\n')
-			self.footer_flag = '0'
+			self.footerFlag = '0'
 		else:
-			self.footer_flag = input('0=discard footer\n1=save footer\n> ')
+			while self.footerFlag not in otherFlagOptions:
+				self.footerFlag = input('0=discard footer\n1=save footer\n> ')
 
 		self.ADC = []
 		self.IQ = []
 		self.footer = []
-		self.vinfo = VersionInfo()
-		self.inststate = InstrumentState()
-		self.dformat = DataFormat()
-		self.chcorr = ChannelCorrection()
+		self.vInfo = VersionInfo()
+		self.instState = InstrumentState()
+		self.dFormat = DataFormat()
+		self.chCorr = ChannelCorrection()
 
 	def convert(self):
 		# Main conversion function
@@ -128,19 +138,19 @@ class R3F:
 		self.file_muncher()
 
 	def display_control(self):
-		# Depending on the status of 'disp_flag,' print header data, 
+		# Depending on the status of 'dispFlag,' print header data, 
 		# display correction plots, do both, or do neither
-		if self.disp_flag == '3':
+		if self.dispFlag == '3':
 			self.print_header_data()
 			print('Header printed and channel correction graphs plotted.\n')
 			self.plot_graphs()
-		elif self.disp_flag == '2':
+		elif self.dispFlag == '2':
 			print('Channel correction graphs plotted.\n')
 			self.plot_graphs()
-		elif self.disp_flag == '1':
+		elif self.dispFlag == '1':
 			self.print_header_data()
 			print('Header printed.\n')
-		elif self.disp_flag== '0':
+		elif self.dispFlag== '0':
 			print('Header parsed.')
 		else: 
 			print('Invalid choice. Select 0, 1, 2, or 3.')
@@ -152,135 +162,143 @@ class R3F:
 		# np.fromstring() allows the user to specify data type.
 		# unpack() saves data as a tuple, which can be used for printing
 		# but not calculations
-		data = self.headerfile.read(16384)
+		data = self.headerFile.read(16384)
 
 		# Get File ID and Version Info sections of the header
-		self.vinfo.fileid = data[:27]
-		self.vinfo.endian = np.fromstring(
+		self.vInfo.fileid = data[:27]
+		self.vInfo.endian = np.fromstring(
 			data[512:516], dtype=np.uint32)
-		self.vinfo.fileformatversion = unpack('4B', data[516:520])
-		self.vinfo.apiversion = unpack('4B', data[520:524])
-		self.vinfo.fx3version = unpack('4B', data[524:528])
-		self.vinfo.fpgaversion = unpack('4B', data[528:532])
-		self.vinfo.devicesn = data[532:596]
+		self.vInfo.fFormatVer = unpack('4B', data[516:520])
+		self.vInfo.apiVersion = unpack('4B', data[520:524])
+		self.vInfo.fx3Version = unpack('4B', data[524:528])
+		self.vInfo.fpgaVersion = unpack('4B', data[528:532])
+		self.vInfo.deviceSN = data[532:596]
 		
 		# Get the Instrument State section of the header
-		self.inststate.referencelevel = unpack('1d', data[1024:1032])
-		self.inststate.centerfrequency = unpack('1d', data[1032:1040])
-		self.inststate.temperature = unpack('1d', data[1040:1048])
-		self.inststate.alignment = unpack('1I', data[1048:1052])
-		self.inststate.freqreference = unpack('1I', data[1052:1056])
-		self.inststate.trigmode = unpack('1I', data[1056:1060])
-		self.inststate.trigsource = unpack('1I', data[1060:1064])
-		self.inststate.trigtrans = unpack('1I', data[1064:1068])
-		self.inststate.triglevel = unpack('1d', data[1068:1076])
+		self.instState.refLevel = unpack('1d', data[1024:1032])
+		self.instState.cf = unpack('1d', data[1032:1040])
+		self.instState.temp = unpack('1d', data[1040:1048])
+		self.instState.alignment = unpack('1I', data[1048:1052])
+		self.instState.freqRef = unpack('1I', data[1052:1056])
+		self.instState.trigMode = unpack('1I', data[1056:1060])
+		self.instState.trigSource = unpack('1I', data[1060:1064])
+		self.instState.trigTrans = unpack('1I', data[1064:1068])
+		self.instState.trigLevel = unpack('1d', data[1068:1076])
 
 		# Get Data Format section of the header
-		#self.dformat.datatype = unpack('1I', data[2048:2052])
-		self.dformat.datatype = np.fromstring(
+		#self.dFormat.dataType = unpack('1I', data[2048:2052])
+		self.dFormat.dataType = np.fromstring(
 			data[2048:2052], dtype=np.uint32)
-		if self.dformat.datatype == 161:
-			self.dformat.datatype = 2 #bytes per sample
-		self.dformat.frameoffset = np.fromstring(
+		if self.dFormat.dataType == 161:
+			self.dFormat.dataType = 2 #bytes per sample
+		self.dFormat.frameOffset = np.fromstring(
 			data[2052:2056], dtype=np.uint32)
-		self.dformat.framesize = np.fromstring(
+		self.dFormat.frameSize = np.fromstring(
 			data[2056:2060], dtype=np.uint32)
-		self.dformat.sampleoffset = unpack('1I', data[2060:2064])
-		self.dformat.samplesize = np.fromstring(
+		self.dFormat.sampleOffset = unpack('1I', data[2060:2064])
+		self.dFormat.sampleSize = np.fromstring(
 			data[2064:2068], dtype=np.int32)
-		self.dformat.nonsampleoffset = np.fromstring(
+		self.dFormat.nonsampleOffset = np.fromstring(
 			data[2068:2072], dtype=np.uint32)
-		self.dformat.nonsamplesize = np.fromstring(
+		self.dFormat.nonSampleSize = np.fromstring(
 			data[2072:2076], dtype=np.uint32)
-		self.dformat.ifcenterfrequency = np.fromstring(
+		self.dFormat.ifcf = np.fromstring(
 			data[2076:2084], dtype=np.double)
-		#self.dformat.samplerate = unpack('1d', data[2084:2092])
-		self.dformat.samplerate = np.fromstring(
+		#self.dFormat.sRate = unpack('1d', data[2084:2092])
+		self.dFormat.sRate = np.fromstring(
 			data[2084:2092], dtype=np.double)
-		self.dformat.bandwidth = unpack('1d', data[2092:2100])
-		self.dformat.corrected = unpack('1I', data[2100:2104])
-		self.dformat.timetype = unpack('1I', data[2104:2108])
-		self.dformat.reftime = unpack('7i', data[2108:2136])
-		self.dformat.clocksamples = unpack('1Q', data[2136:2144])
-		self.dformat.timesamplerate = np.fromstring(
+		self.dFormat.bandwidth = unpack('1d', data[2092:2100])
+		self.dFormat.corrected = unpack('1I', data[2100:2104])
+		self.dFormat.timeType = unpack('1I', data[2104:2108])
+		self.dFormat.refTime = unpack('7i', data[2108:2136])
+		self.dFormat.clockSamples = unpack('1Q', data[2136:2144])
+		self.dFormat.timeSampleRate = np.fromstring(
 			data[2144:2152], dtype=np.uint64)
-		self.dformat.utctime = unpack('7i', data[2152:2180])
+		self.dFormat.utcTime = unpack('7i', data[2152:2180])
 
 		# Get Signal Path and Channel Correction data
-		self.chcorr.adcscale = np.fromstring(
+		self.chCorr.adcScale = np.fromstring(
 			data[3072:3080], dtype=np.double)
-		self.chcorr.pathdelay = np.fromstring(
+		self.chCorr.pathDelay = np.fromstring(
 			data[3080:3088], dtype=np.double)
-		self.chcorr.correctiontype = np.fromstring(
+		self.chCorr.corrType = np.fromstring(
 			data[4096:4100], dtype=np.uint32)
-		tableentries = np.fromstring(data[4352:4356], dtype=np.uint32)
-		self.chcorr.tableentries = tableentries	#purely for use in IQ_correction()
+		tableEntries = np.fromstring(data[4352:4356], dtype=np.uint32)
+		self.chCorr.tableEntries = tableEntries	#purely for use in IQ_correction()
 		freqindex = 4356
 		phaseindex = freqindex + 501*4
 		ampindex = phaseindex + 501*4
-		self.chcorr.freqtable = np.fromstring(
+		self.chCorr.freqTable = np.fromstring(
 			data[freqindex:(freqindex+501*4)], dtype=np.float32)
-		self.chcorr.phasetable = np.fromstring(
+		self.chCorr.phaseTable = np.fromstring(
 			data[phaseindex:ampindex], dtype=np.float32)
-		self.chcorr.amptable = np.fromstring(
-			data[ampindex:(ampindex+tableentries*4)], dtype=np.float32)
-		self.headerfile.close()
+		self.chCorr.ampTable = np.fromstring(
+			data[ampindex:(int(ampindex+tableEntries*4))], dtype=np.float32)
+		self.headerFile.close()
 		
 	def print_header_data(self):
 		# This function simply prints out all the header data
-		print('FILE INFO')
-		print('FileID: %s' % self.vinfo.fileid)
-		print('Endian Check: 0x%x' % self.vinfo.endian)
-		print('File Format Version: %i.%i.%i.%i' % self.vinfo.fileformatversion)
-		print('API Version: %i.%i.%i.%i' % self.vinfo.apiversion)
-		print('FX3 Version: %i.%i.%i.%i' % self.vinfo.fx3version)
-		print('FPGA Version: %i.%i.%i.%i' % self.vinfo.fpgaversion)
-		print('Device Serial Number: %s' % self.vinfo.devicesn)
+		print('\nFILE INFO')
+		print('FileID: ', self.vInfo.fileid.decode())
+		print('Endian Check: {:#x}'.format(self.vInfo.endian[0]))
+		print('File Format Version: {0[0]}.{0[1]}.{0[2]}.{0[3]}'.format(
+			self.vInfo.fFormatVer))
+		print('API Version: {0[0]}.{0[1]}.{0[2]}.{0[3]}'.format(
+			self.vInfo.apiVersion))
+		print('FX3 Version: {0[0]}.{0[1]}.{0[2]}.{0[3]}'.format(
+			self.vInfo.fx3Version))
+		print('FPGA Version: {0[0]}.{0[1]}.{0[2]}.{0[3]}'.format(
+			self.vInfo.fpgaVersion))
+		print('Device Serial Number: ', self.vInfo.deviceSN.decode())
+		# De facto \n in device serial number
 
 		print('INSTRUMENT STATE')
-		print('Reference Level: %d dBm' % self.inststate.referencelevel)
-		print('Center Frequency: %d Hz' % self.inststate.centerfrequency)
-		print('Temperature: %d C' % self.inststate.temperature)
-		print('Alignment status: %d' % self.inststate.alignment)
-		print('Frequency Reference: %d' % self.inststate.freqreference)
-		print('Trigger mode: %d' % self.inststate.trigmode)
-		print('Trigger Source: %d' % self.inststate.trigsource)
-		print('Trigger Transition: %d' % self.inststate.trigtrans)
-		print('Trigger Level: %d dBm\n' % self.inststate.triglevel)
+		print('Reference Level: {:.2f} dBm'.format(
+			self.instState.refLevel[0]))
+		print('Center Frequency: {} Hz'.format(
+			self.instState.cf[0]))
+		print('temp: {} C'.format(self.instState.temp[0]))
+		print('Alignment status: ', self.instState.alignment[0])
+		print('Frequency Reference: ', self.instState.freqRef[0])
+		print('Trigger mode: ', self.instState.trigMode[0])
+		print('Trigger Source: ', self.instState.trigSource[0])
+		print('Trigger Transition: ', self.instState.trigTrans[0])
+		print('Trigger Level: {} dBm'.format(self.instState.trigLevel[0]))
 
-		print('DATA FORMAT')
-		print('Data Type: %i bytes per sample' % self.dformat.datatype)
-		print('Offset to first frame (bytes): %i' % self.dformat.frameoffset)
-		print('Frame Size (bytes): %i' % self.dformat.framesize)
-		print('Offset to sample data (bytes): %i' % self.dformat.sampleoffset)
-		print('Samples in Frame: %i' % self.dformat.samplesize)
-		print('Offset to non-sample data: %i' % self.dformat.nonsampleoffset)
-		print('Size of non-sample data: %i' % self.dformat.nonsamplesize)
-		print('IF Center Frequency: %i Hz' % self.dformat.ifcenterfrequency)
-		print('Sample Rate: %i S/sec' % self.dformat.samplerate)
-		print('Bandwidth: %i Hz' % self.dformat.bandwidth)
-		print('Corrected data status: %i' % self.dformat.corrected)
-		print('Time Type (0=local, 1=remote): %i' % self.dformat.timetype)
-		print('Reference Time: %i %i/%i at %i:%i:%i.%i' % self.dformat.reftime)
-		print('Clock sample count: %i' % self.dformat.clocksamples)
-		print('Sample ticks per second: %i' % self.dformat.timesamplerate)
-		print('UTC Time: %i %i/%i at %i:%i:%i.%i\n' % self.dformat.utctime)
+		print('\nDATA FORMAT')
+		print('Data Type: {} bytes per sample'.format(self.dFormat.dataType))
+		print('Offset to first frame (bytes): ', self.dFormat.frameOffset[0])
+		print('Frame Size (bytes): ', self.dFormat.frameSize[0])
+		print('Offset to sample data (bytes): ', self.dFormat.sampleOffset[0])
+		print('Samples in Frame: ', self.dFormat.sampleSize[0])
+		print('Offset to non-sample data: ', self.dFormat.nonsampleOffset[0])
+		print('Size of non-sample data: ', self.dFormat.nonSampleSize[0])
+		print('IF Center Frequency: {} Hz'.format(
+			self.dFormat.ifcf[0]))
+		print('Sample Rate: {} S/sec'.format(self.dFormat.sRate[0]))
+		print('Bandwidth: {} Hz'.format(self.dFormat.bandwidth[0]))
+		print('Corrected data status: ', self.dFormat.corrected[0])
+		print('Time Type (0=local, 1=remote): ', self.dFormat.timeType[0])
+		print('Reference Time: {0[1]}/{0[2]}/{0[0]} at {0[3]}:{0[4]}:{0[5]}.{0[6]}'.format(self.dFormat.refTime))
+		print('Clock sample count: ', self.dFormat.clockSamples[0])
+		print('Sample ticks per second: ', self.dFormat.timeSampleRate[0])
+		print('UTC Time: {0[1]}/{0[2]}/{0[0]} at {0[3]}:{0[4]}:{0[5]}.{0[6]}'.format(self.dFormat.utcTime))
 
-		print('CHANNEL AND SIGNAL PATH CORRECTION')
-		print('ADC Scale Factor: %12.12f' % self.chcorr.adcscale)
-		print('Signal Path Delay: %f nsec' % (self.chcorr.pathdelay*1e9))
-		print('Correction Type (0=LF, 1=IF): %i\n' % self.chcorr.correctiontype)
+		print('\nCHANNEL AND SIGNAL PATH CORRECTION')
+		print('ADC Scale Factor: ', self.chCorr.adcScale[0])
+		print('Signal Path Delay: {} nsec'.format(self.chCorr.pathDelay[0]*1e9))
+		print('Correction Type (0=LF, 1=IF): ', self.chCorr.corrType[0])
 
 
 	def plot_graphs(self):
 		# This function plots the amplitude and phase correction 
 		# tables as a function of IF frequency
 		plt.subplot(2,1,1)
-		plt.plot(self.chcorr.freqtable/1e6,self.chcorr.amptable)
+		plt.plot(self.chCorr.freqTable/1e6,self.chCorr.ampTable)
 		plt.title('Amplitude and Phase Correction')
 		plt.ylabel('Amplitude (dB)')
 		plt.subplot(2,1,2)
-		plt.plot(self.chcorr.freqtable/1e6,self.chcorr.phasetable)
+		plt.plot(self.chCorr.freqTable/1e6,self.chCorr.phaseTable)
 		plt.ylabel('Phase (degrees)')
 		plt.xlabel('IF Frequency (MHz)')
 		plt.show()
@@ -290,34 +308,34 @@ class R3F:
 		# Creates header and data files out of user's chosen file for use in
 		# other functions, calculates file size in bytes and length in
 		# seconds, and calls get_header_data()
-		if '.r3f' in self.infilename:
+		if '.r3f' in self.inFileName:
 			try:
-				self.headerfile = open(self.infilename, 'rb')
-				self.datafile = open(self.infilename, 'rb')
+				self.headerFile = open(self.inFileName, 'rb')
+				self.dataFile = open(self.inFileName, 'rb')
 			except IOError:
 				print('\nCannot open file. Check the input file name and try again.\n')
 				quit()
 			self.get_header_data()
-			self.filesize = os.path.getsize(self.datafile.name)
-			self.numframes = int((self.filesize/self.dformat.framesize) - 1)
+			self.fileSize = getsize(self.dataFile.name)
+			self.numFrames = int((self.fileSize/self.dFormat.frameSize) - 1)
 			#because it needs to be unsigned to check looping in file_muncher correctly
-			self.filelength = self.numframes*(self.dformat.samplesize/self.dformat.samplerate)
-			print('Number of Frames: {}\n'.format(self.numframes))
-			print('File size is: {} bytes.'.format(self.filesize))
-			print('File length is: {} seconds.\n'.format(self.filelength))
+			self.fileLength = self.numFrames*(self.dFormat.sampleSize/self.dFormat.sRate)
+			print('Number of Frames: {}\n'.format(self.numFrames))
+			print('File size is: {} bytes.'.format(self.fileSize))
+			print('File length is: {:.6f} seconds.'.format(self.fileLength[0]))
 
-		elif '.r3a' in self.infilename or '.r3h' in self.infilename:
+		elif '.r3a' in self.inFileName or '.r3h' in self.inFileName:
 			try:	
-				self.headerfile = open((self.infilename[:-1] + 'h'), 'rb')
-				self.datafile = open((self.infilename[:-1] + 'a'), 'rb')
+				self.headerFile = open((self.inFileName[:-1] + 'h'), 'rb')
+				self.dataFile = open((self.inFileName[:-1] + 'a'), 'rb')
 			except IOError:
 				print('\nCannot open file. Check the input file name and try again.\n')
 				quit()
 			self.get_header_data()
-			self.filesize = int(os.path.getsize(self.datafile.name))
-			self.filelength = self.filesize/self.dformat.datatype/self.dformat.samplerate
+			self.fileSize = int(getsize(self.dataFile.name))
+			self.fileLength = self.fileSize/self.dFormat.dataType/self.dFormat.sRate
 			print('File size is: {} bytes.\nFile Length is {} seconds.\n'.format(
-				self.filesize, self.filelength))
+				self.fileSize, self.fileLength))
 		else:
 			print('Compatible file extension not found, check input file and try again.')
 			quit()
@@ -329,93 +347,93 @@ class R3F:
 		print('Beginning file conversion.\n')
 		loop = 0
 		# formatted processing loop based on number of frames in data file
-		if '.r3f' in self.datafile.name:
+		if '.r3f' in self.dataFile.name:
 			fps = 13698
-			while self.numframes > 0:
-				if self.numframes > fps:
+			while self.numFrames > 0:
+				if self.numFrames > fps:
 					print('File is longer than 1 second, splitting into {} files.'
-						.format(int(math.ceil(self.filelength))))
-					process_data = fps
+						.format(int(np.ceil(self.fileLength))))
+					processData = fps
 				else:
-					process_data = self.numframes
+					processData = self.numFrames
 				if loop == 0:
-					startpoint = self.dformat.frameoffset
+					startPoint = self.dFormat.frameOffset
 				elif loop > 0:
-					startpoint = loop*fps*self.dformat.framesize
-				self.get_adc_samples(process_data, startpoint)
+					startPoint = loop*fps*self.dFormat.frameSize
+				self.get_adc_samples(processData, startPoint)
 				self.ddc()
-				self.file_saver(loop, process_data)
-				self.numframes -= fps
+				self.file_saver(loop, processData)
+				self.numFrames -= fps
 				loop += 1
 		# raw processing loop based on file size in bytes
-		elif '.r3a' in self.datafile.name:
-			bytes_per_second = 224000000
-			while self.filesize > 0:
-				if self.filesize > bytes_per_second:
-					process_data = bytes_per_second/2 #two bytes per sample
+		elif '.r3a' in self.dataFile.name:
+			bytesPerSecond = 224000000
+			while self.fileSize > 0:
+				if self.fileSize > bytesPerSecond:
+					processData = bytesPerSecond/2 #two bytes per sample
 				else:
-					process_data = self.filesize
+					processData = self.fileSize
 				if loop == 0:
-					startpoint = 0
+					startPoint = 0
 				elif loop > 0:
-					startpoint = loop*bytes_per_second
-				self.get_adc_samples(process_data, startpoint)
+					startPoint = loop*bytesPerSecond
+				self.get_adc_samples(processData, startPoint)
 				self.ddc()
-				self.file_saver(loop, process_data)
-				self.filesize -= bytes_per_second
+				self.file_saver(loop, processData)
+				self.fileSize -= bytesPerSecond
 				loop += 1
-		self.datafile.close()
+		self.dataFile.close()
 
-	def get_adc_samples(self, process_data, startpoint):
+	def get_adc_samples(self, processData, startPoint):
 		# Reads ADC samples from input file 
 		# Skips over or saves footer for .r3f files
 		# Reads in everything for .r3a files
 
 		#Filter file type and read the file appropriately
-		if '.r3f' in self.datafile.name:
-			self.datafile.seek(startpoint)
-			adcsamples = np.empty(process_data*self.dformat.samplesize)
+		if '.r3f' in self.dataFile.name:
+			self.dataFile.seek(startPoint[0])
+			adcsamples = np.empty(processData*self.dFormat.sampleSize[0])
 			fstart = 0
-			fstop = self.dformat.samplesize
-			self.footer = range(process_data)
-			for i in range(process_data):
-				frame = self.datafile.read(self.dformat.nonsampleoffset)
-				adcsamples[fstart:fstop] = np.fromstring(frame, 
-					dtype=np.int16)
+			fstop = self.dFormat.sampleSize[0]
+			# self.footer = np.arange(processData)
+			self.footer = []
+			for i in range(processData):
+				frame = self.dataFile.read(self.dFormat.nonsampleOffset[0])
+				adcsamples[fstart:fstop] = np.fromstring(frame, dtype=np.int16)
 				fstart = fstop
-				fstop = fstop + self.dformat.samplesize
-				if self.footer_flag == '0':
-					self.datafile.seek(self.dformat.nonsamplesize,1)
+				fstop = fstop + self.dFormat.sampleSize[0]
+				if self.footerFlag == '0':
+					self.dataFile.seek(self.dFormat.nonSampleSize[0],1)
 				else:
-					temp_ftr = self.datafile.read(self.dformat.nonsamplesize)
-					self.footer[i] = FooterClass()
-					self.footer[i] = self.parse_footer(temp_ftr)
-		elif '.r3a' in self.datafile.name:
-			self.datafile.seek(startpoint)
-			adcsamples = np.empty(process_data)
-			adcsamples = np.fromfile(self.datafile, dtype=np.int16, 
-				count=process_data)
+					tempFtr = self.dataFile.read(self.dFormat.nonSampleSize[0])
+					# self.footer[i] = FooterClass()
+					self.footer.append(self.parse_footer(tempFtr))
+		elif '.r3a' in self.dataFile.name:
+			self.dataFile.seek(startPoint)
+			adcsamples = np.empty(processData)
+			adcsamples = np.fromfile(self.dataFile, dtype=np.int16, 
+				count=processData)
 		else:
 			print('Invalid file type. Please specify a .r3f, r3a, or .r3h file.\n')
 			quit()
 
 		#Scale ADC data
-		self.ADC = adcsamples*self.chcorr.adcscale
+		self.ADC = adcsamples*self.chCorr.adcScale
 
 	def parse_footer(self, raw_footer):
 		# Parses footer based on internal footer documentation
 		footer = FooterClass()
 		footer.reserved = np.fromstring(raw_footer[0:6], 
 			dtype=np.uint16, count=3)
-		footer.frame_id = np.fromstring(raw_footer[8:12],
+		footer.frameId = np.fromstring(raw_footer[8:12],
 		 dtype=np.uint32, count=1)
-		footer.trigger2_idx = np.fromstring(raw_footer[12:14],
+		footer.trig2Idx = np.fromstring(raw_footer[12:14],
 		 dtype=np.uint16, count=1)
-		footer.trigger1_idx = np.fromstring(raw_footer[14:16],
+		footer.trig1Idx = np.fromstring(raw_footer[14:16],
 		 dtype=np.uint16, count=1)
-		footer.time_sync_idx = np.fromstring(raw_footer[16:18],
+		footer.timeSyncIdx = np.fromstring(raw_footer[16:18],
 		 dtype=np.uint16, count=1)
-		footer.frame_status = '{0:8b}'.format(
+		footer.frameStatus = '{0:8b}'.format(
 			int(np.fromstring(raw_footer[18:20], dtype=np.uint16, count=1)))
 		footer.timestamp = np.fromstring(raw_footer[20:28], 
 			dtype=np.uint64, count=1)
@@ -424,26 +442,26 @@ class R3F:
 
 	def ddc(self):
 		# Digital downconverter that converts ADC data to IQ data
-		if self.iq_flag =='1':
+		if self.iqFlag =='1':
 			#Generate quadrature signals
-			IFfreq = self.dformat.ifcenterfrequency
+			ifFreq = self.dFormat.ifcf
 			size = len(self.ADC)
-			sampleperiod = 1.0/self.dformat.timesamplerate
-			xaxis = np.linspace(0,size*sampleperiod,size)
-			LO_I = np.sin(IFfreq*(2*np.pi)*xaxis)
-			LO_Q = np.cos(IFfreq*(2*np.pi)*xaxis)
-			del(xaxis)
+			samplePeriod = 1.0/self.dFormat.timeSampleRate
+			xAxis = np.linspace(0,size*samplePeriod,size)
+			loI = np.sin(ifFreq*(2*np.pi)*xAxis)
+			loQ = np.cos(ifFreq*(2*np.pi)*xAxis)
+			del(xAxis)
 
 			#Run ADC data through digital downconverter
-			I = self.ADC*LO_I
-			Q = self.ADC*LO_Q
-			del(LO_I)
-			del(LO_Q)
-			nyquist = self.dformat.timesamplerate/2
+			I = self.ADC*loI
+			Q = self.ADC*loQ
+			del(loI)
+			del(loQ)
+			nyquist = self.dFormat.timeSampleRate/2
 			cutoff = 40e6/nyquist
-			IQfilter = signal.firwin(32, cutoff, window=('kaiser', 2.23))
-			I = signal.lfilter(IQfilter, 1.0, I)
-			Q = signal.lfilter(IQfilter, 1.0, Q)
+			IQfilter = firwin(32, cutoff, window=('kaiser', 2.23))
+			I = lfilter(IQfilter, 1.0, I)
+			Q = lfilter(IQfilter, 1.0, Q)
 			IQ = I + 1j*Q
 			IQ = 2*IQ
 			self.IQ = IQ
@@ -451,96 +469,115 @@ class R3F:
 
 	def export_header_data(self):
 		# This function exports header data to a csv file
-		fname = self.outfile + '.csv'
-		with open(fname, 'wb') as csvfile:
-			hWriter = csv.writer(csvfile, delimiter=',')
-			hWriter.writerow('HEADER INFO')
-			hWriter.writerow(['FileID:', '%s' % self.vinfo.fileid])
-			hWriter.writerow(['Endian Check:', '0x%x' % self.vinfo.endian])
-			hWriter.writerow(['File Format Version:', '%i.%i.%i.%i' % self.vinfo.fileformatversion])
-			hWriter.writerow(['API Version:', '%i.%i.%i.%i' % self.vinfo.apiversion])
-			hWriter.writerow(['FX3 Version:', '%i.%i.%i.%i' % self.vinfo.fx3version])
-			hWriter.writerow(['FPGA Version:', '%i.%i.%i.%i' % self.vinfo.fpgaversion])
-			hWriter.writerow(['Device Serial Number:', '%s' % self.vinfo.devicesn])
+		fName = self.outFile + '.csv'
+		with open(fName, 'w') as csvfile:
+			w = csv.writer(csvfile, lineterminator='\n')
+			w.writerow(['FILE INFO'])
+			w.writerow(['FileID: ', self.vInfo.fileid.decode()])
+			w.writerow(['Endian Check: ', 
+				'{:#x}'.format(self.vInfo.endian[0])])
+			w.writerow(['File Format Version: ', 
+				'{0[0]}.{0[1]}.{0[2]}.{0[3]}'.format(self.vInfo.fFormatVer)])
+			w.writerow(['API Version:', 
+				'{0[0]}.{0[1]}.{0[2]}.{0[3]}'.format(self.vInfo.apiVersion)])
+			w.writerow(['FX3 Version:', 
+				'{0[0]}.{0[1]}.{0[2]}.{0[3]}'.format(self.vInfo.fx3Version)])
+			w.writerow(['FPGA Version:', 
+				'{0[0]}.{0[1]}.{0[2]}.{0[3]}'.format(self.vInfo.fpgaVersion)])
+			w.writerow(['Device Serial Number:', self.vInfo.deviceSN.decode()])
+			
+			w.writerow(['INSTRUMENT STATE'])
+			w.writerow(['Reference Level:', self.instState.refLevel[0], 'dBm'])
+			w.writerow(['Center Frequency:', self.instState.cf[0], 'Hz'])
+			w.writerow(['temp:', self.instState.temp[0], 'C'])
+			w.writerow(['Alignment status:', self.instState.alignment[0]])
+			w.writerow(['Frequency Reference:', self.instState.freqRef[0]])
+			w.writerow(['Trigger mode:', self.instState.trigMode[0]])
+			w.writerow(['Trigger Source:', self.instState.trigSource[0]])
+			w.writerow(['Trigger Transition: ', self.instState.trigTrans[0]])
+			w.writerow(['Trigger Level:', self.instState.trigLevel[0], 'dBm'])
 
-			hWriter.writerow(['INSTRUMENT STATE'])
-			hWriter.writerow(['Reference Level:', '%d dBm' % self.inststate.referencelevel])
-			hWriter.writerow(['Center Frequency:', '%d Hz' % self.inststate.centerfrequency])
-			hWriter.writerow(['Temperature:', '%d C' % self.inststate.temperature])
-			hWriter.writerow(['Alignment status:', '%d' % self.inststate.alignment])
-			hWriter.writerow(['Frequency Reference:', '%d' % self.inststate.freqreference])
-			hWriter.writerow(['Trigger mode:', '%d' % self.inststate.trigmode])
-			hWriter.writerow(['Trigger Source:', '%d' % self.inststate.trigsource])
-			hWriter.writerow(['Trigger Transition:', '%d' % self.inststate.trigtrans])
-			hWriter.writerow(['Trigger Level:', '%d dBm\n' % self.inststate.triglevel])
+			w.writerow(['DATA FORMAT'])
+			w.writerow(['Data Type:', self.dFormat.dataType, 
+				'bytes per sample'])
+			w.writerow(['Offset to first frame:', 
+				self.dFormat.frameOffset[0], 'bytes'])
+			w.writerow(['Frame Size:', self.dFormat.frameSize[0], 'bytes'])
+			w.writerow(['Offset to sample data:', self.dFormat.sampleOffset[0], 
+				'bytes'])
+			w.writerow(['Samples in Frame:', self.dFormat.sampleSize[0]])
+			w.writerow(['Offset to non-sample data:', 
+				self.dFormat.nonsampleOffset[0]])
+			w.writerow(['Size of non-sample data:', 
+				self.dFormat.nonSampleSize[0]])
+			w.writerow(['IF Center Frequency:', self.dFormat.ifcf[0], 'Hz'])
+			w.writerow(['Sample Rate:', self.dFormat.sRate[0], 'S/sec'])
+			w.writerow(['Bandwidth:', self.dFormat.bandwidth[0], 'Hz'])
+			w.writerow(['Corrected data status:', self.dFormat.corrected[0]])
+			w.writerow(['Time Type (0=local, 1=remote):', 
+				self.dFormat.timeType[0]])
+			w.writerow(['Reference Time:', 
+				'{0[1]}/{0[2]}/{0[0]}'.format(self.dFormat.refTime), 
+				'{0[3]}:{0[4]}:{0[5]}.{0[6]}'.format(self.dFormat.refTime)])
+			w.writerow(['Clock sample count:', self.dFormat.clockSamples[0]])
+			w.writerow(['Sample ticks per second:', 
+				self.dFormat.timeSampleRate[0]])
+			w.writerow(['UTC Time:', 
+				'{0[1]}/{0[2]}/{0[0]}'.format(self.dFormat.utcTime), 
+				'{0[3]}:{0[4]}:{0[5]}.{0[6]}\n'.format(self.dFormat.utcTime)])
 
-			hWriter.writerow(['DATA FORMAT'])
-			hWriter.writerow(['Data Type:', '%i bytes per sample' % self.dformat.datatype])
-			hWriter.writerow(['Offset to first frame (bytes):', '%i' % self.dformat.frameoffset])
-			hWriter.writerow(['Frame Size (bytes):', '%i' % self.dformat.framesize])
-			hWriter.writerow(['Offset to sample data (bytes):', '%i' % self.dformat.sampleoffset])
-			hWriter.writerow(['Samples in Frame:', '%i' % self.dformat.samplesize])
-			hWriter.writerow(['Offset to non-sample data:', '%i' % self.dformat.nonsampleoffset])
-			hWriter.writerow(['Size of non-sample data:', '%i' % self.dformat.nonsamplesize])
-			hWriter.writerow(['IF Center Frequency:', '%i Hz' % self.dformat.ifcenterfrequency])
-			hWriter.writerow(['Sample Rate:', '%i S/sec' % self.dformat.samplerate])
-			hWriter.writerow(['Bandwidth:', '%i Hz' % self.dformat.bandwidth])
-			hWriter.writerow(['Corrected data status:', '%i' % self.dformat.corrected])
-			hWriter.writerow(['Time Type (0=local, 1=remote):', '%i' % self.dformat.timetype])
-			hWriter.writerow(['Reference Time:', '%i %i/%i at %i:%i:%i.%i' % self.dformat.reftime])
-			hWriter.writerow(['Clock sample count:', '%i' % self.dformat.clocksamples])
-			hWriter.writerow(['Sample ticks per second:', '%i' % self.dformat.timesamplerate])
-			hWriter.writerow(['UTC Time:', '%i %i/%i at %i:%i:%i.%i\n' % self.dformat.utctime])
+			w.writerow(['CHANNEL AND SIGNAL PATH CORRECTION'])
+			w.writerow(['ADC Scale Factor:', self.chCorr.adcScale[0]])
+			w.writerow(['Signal Path Delay:', self.chCorr.pathDelay[0]*1e9, 
+				'nsec'])
+			w.writerow(['Correction Type (0=LF, 1=IF):', 
+				self.chCorr.corrType[0]])
+			
 
-			hWriter.writerow(['CHANNEL AND SIGNAL PATH CORRECTION'])
-			hWriter.writerow(['ADC Scale Factor:', '%12.12f' % self.chcorr.adcscale])
-			hWriter.writerow(['Signal Path Delay:', '%f nsec' % (self.chcorr.pathdelay*1e9)])
-			hWriter.writerow(['Correction Type (0=LF, 1=IF):', '%i\n' % self.chcorr.correctiontype])
-		
-		
-	def file_saver(self, loop, process_data):
+					
+	def file_saver(self, loop, processData):
 		# Saves a .mat file containing variables specified in the 
 		# SignalVu-PC help file
 		# Also saves a footer data in a .txt file
-		if self.header_flag == '1':
+		if self.headerFlag == '1':
 			self.export_header_data()
 		
-		if self.iq_flag == '1':
-			InputCenter = self.inststate.centerfrequency
-			XDelta = 1.0/self.dformat.timesamplerate
+		if self.iqFlag == '1':
+			InputCenter = self.instState.cf
+			XDelta = 1.0/self.dFormat.timeSampleRate
 			Y = self.IQ
 			InputZoom = np.uint8(1)
-			Span = self.dformat.bandwidth
-			filename = self.outfile + '_' + str(loop)
-			sio.savemat(filename, {'InputCenter':InputCenter,'Span':Span, 
+			Span = self.dFormat.bandwidth
+			fileName = self.outFile + '_' + str(loop)
+			savemat(fileName, {'InputCenter':InputCenter,'Span':Span, 
 				'XDelta':XDelta,'Y':Y,'InputZoom':InputZoom}, format='5')
-			print('Data file saved at {}.mat'.format(filename))
+			print('Data file saved at {}.mat'.format(fileName))
 
-		if self.footer_flag == '1':
-			fname = self.outfile + '_' + str(loop) + '.txt'
-			ffile = open(fname, 'w')
+		if self.footerFlag == '1':
+			fName = self.outFile + '_' + str(loop) + '.txt'
+			ffile = open(fName, 'w')
 			ffile.write('FrameID\tTrig1\tTrig2\tTSync\tFrmStatus\tTimeStamp\n')
-			for i in range(process_data):
-				ffile.write(', '.join(map(str, self.footer[i].frame_id)))
+			for i in range(processData):
+				ffile.write(', '.join(map(str, self.footer[i].frameId)))
 				ffile.write('\t')
-				ffile.write(', '.join(map(str, self.footer[i].trigger2_idx)))
+				ffile.write(', '.join(map(str, self.footer[i].trig2Idx)))
 				ffile.write('\t')
-				ffile.write(', '.join(map(str, self.footer[i].trigger1_idx)))
+				ffile.write(', '.join(map(str, self.footer[i].trig1Idx)))
 				ffile.write('\t')
-				ffile.write(', '.join(map(str, self.footer[i].time_sync_idx)))
+				ffile.write(', '.join(map(str, self.footer[i].timeSyncIdx)))
 				ffile.write('\t')
-				ffile.write(self.footer[i].frame_status)
+				ffile.write(self.footer[i].frameStatus)
 				ffile.write('\t')
 				ffile.write(', '.join(map(str, self.footer[i].timestamp)))
 				ffile.write('\n')
 			ffile.close()
-			print('Footer file saved at {}.'.format(fname))
+			print('Footer file saved at {}.'.format(fName))
 
 def main():
 	r3f = R3F()
-	start = time.clock()
+	start = perf_counter()
 	r3f.convert()
-	end = time.clock()
+	end = perf_counter()
 	print('Elapsed time is: {}'.format((end-start)))
 
 if __name__ == '__main__':
